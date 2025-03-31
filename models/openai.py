@@ -1,6 +1,8 @@
 import sys
 import tiktoken
-import openai
+from openai import OpenAI
+
+client = OpenAI()
 import google.generativeai as palm
 from google.generativeai.types import safety_types
 from models.base import ModelBackbone
@@ -91,11 +93,11 @@ class OpenAIModelChatCompletion(ModelBackbone):
             messages = kwargs['messages']
             self.token_counter += len(enc.encode(str(messages)))
 
-        response = openai.ChatCompletion.create(*args, **kwargs, model=self.model_type.value)
+        response = client.chat.completions.create(*args, **kwargs, model=self.model_type.value)
         if not isinstance(response, Dict):
             raise RuntimeError("Unexpected return from OpenAI API")
 
-        return response['choices'][0]['message']['content']
+        return response.choices[0].message.content
 
     @property
     def token_used(self):
@@ -113,7 +115,7 @@ class OpenAIModelCompletion(ModelBackbone):
             messages = kwargs['messages']
             self.token_counter += len(enc.encode(str(messages)))
 
-        response = openai.Completion.create(*args, **kwargs, model=self.model_type.value)
+        response = client.completions.create(*args, **kwargs, model=self.model_type.value)
         if not isinstance(response, Dict):
             raise RuntimeError("Unexpected return from OpenAI API")
 

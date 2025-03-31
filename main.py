@@ -243,7 +243,6 @@ def main(arg):
                                                      frequency_penalty=0.0
                                                      )
         if arg.helper_prompt_instruction != 'No_Helper':
-            
             helper_feedback_switch=True
         else:
             helper_feedback_switch=False
@@ -296,5 +295,4 @@ if __name__ == '__main__':
 
     arg = define_arguments()
     palm.configure(api_key=arg.api_key_palm)
-    openai.api_key = arg.api_key_openai
     main(arg)
