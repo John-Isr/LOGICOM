@@ -1,8 +1,21 @@
+import os
+
+# Set OpenAI API key from the API_keys file
+try:
+    with open('API_keys', 'r') as f:
+        for line in f:
+            if 'OpenAI_API_key:' in line:
+                os.environ["OPENAI_API_KEY"] = line.split('OpenAI_API_key:')[1].strip()
+            elif 'Google_API_key:' in line:
+                os.environ["GOOGLE_API_KEY"] = line.split('Google_API_key:')[1].strip()
+except Exception as e:
+    print(f"Error loading API keys: {e}")
+
 import time
 import openai
 
 from tqdm import tqdm
-import google.generativeai as palm
+import google.generativeai as genai
 from agents.modertorAgent import ModeratorAgent
 from config.gptconfig import ChatGPTConfig
 
@@ -207,30 +220,30 @@ def main(arg):
 
         r''' Initialize the Moderator Agent'''
 
-        moderator_agent_1 = ModeratorAgent(model=ModelType.PaLM_TEXT_GENERATION,
+        moderator_agent_1 = ModeratorAgent(model=ModelType.GEMINI_1_5_FLASH_8B,
                                            prompt_instruction_path_moderator_terminator='prompts/moderator/%s.txt' % arg.moderator_terminator_instruction_palm,
                                            prompt_instruction_path_moderator_tag_checker='prompts/moderator/%s.txt' % arg.moderator_tag_checker_instruction_palm,
                                            prompt_instruction_path_moderator_topic_checker='prompts/moderator/%s.txt' % arg.moderator_topic_checker_instruction_palm,
                                            variables=get_variables(data.loc[i], AgentType.DEBATER_AGENT)
                                            )
-        moderator_agent_2 = ModeratorAgent(model=ModelType.PaLM_TEXT_GENERATION,
+        moderator_agent_2 = ModeratorAgent(model=ModelType.GEMINI_1_5_FLASH_8B,
                                            prompt_instruction_path_moderator_terminator='prompts/moderator/%s.txt' % arg.moderator_terminator_instruction_palm,
                                            prompt_instruction_path_moderator_tag_checker='prompts/moderator/%s.txt' % arg.moderator_tag_checker_instruction_palm,
                                            prompt_instruction_path_moderator_topic_checker='prompts/moderator/%s.txt' % arg.moderator_topic_checker_instruction_palm,
                                            variables=get_variables(data.loc[i], AgentType.DEBATER_AGENT))
 
-        moderator_agent_3 = ModeratorAgent(model=ModelType.PaLM_TEXT_GENERATION,
+        moderator_agent_3 = ModeratorAgent(model=ModelType.GEMINI_1_5_FLASH_8B,
                                            prompt_instruction_path_moderator_terminator='prompts/moderator/%s.txt' % arg.moderator_terminator_instruction_palm,
                                            prompt_instruction_path_moderator_tag_checker='prompts/moderator/%s.txt' % arg.moderator_tag_checker_instruction_palm,
                                            prompt_instruction_path_moderator_topic_checker='prompts/moderator/%s.txt' % arg.moderator_topic_checker_instruction_palm,
                                            variables=get_variables(data.loc[i], AgentType.DEBATER_AGENT))
-        moderator_agent_4 = ModeratorAgent(model=ModelType.GPT_4_0613,
+        moderator_agent_4 = ModeratorAgent(model=ModelType.GPT_4_TURBO_0613,
                                            prompt_instruction_path_moderator_terminator='prompts/moderator/%s.txt' % arg.moderator_terminator_instruction_gpt,
                                            prompt_instruction_path_moderator_tag_checker='prompts/moderator/%s.txt' % arg.moderator_tag_checker_instruction_gpt,
                                            prompt_instruction_path_moderator_topic_checker='prompts/moderator/%s.txt' % arg.moderator_topic_checker_instruction_gpt,
                                            variables=get_variables(data.loc[i], AgentType.DEBATER_AGENT
                                                                    ))
-        moderator_agent_5 = ModeratorAgent(model=ModelType.GPT_3_5_TURBO_0613,
+        moderator_agent_5 = ModeratorAgent(model=ModelType.GPT_3_5_TURBO_0125,
                                            prompt_instruction_path_moderator_terminator='prompts/moderator/%s.txt' % arg.moderator_terminator_instruction_gpt,
                                            prompt_instruction_path_moderator_tag_checker='prompts/moderator/%s.txt' % arg.moderator_tag_checker_instruction_gpt,
                                            prompt_instruction_path_moderator_topic_checker='prompts/moderator/%s.txt' % arg.moderator_topic_checker_instruction_gpt,
@@ -250,8 +263,8 @@ def main(arg):
 
         r''' Initialize the Persuader Agent'''
         persuader_agent = PersuaderAgent(
-            model=ModelType.GPT_3_5_TURBO_0613,
-            model_helper=ModelType.GPT_3_5_TURBO_0613,
+            model=ModelType.GPT_3_5_TURBO_0125,
+            model_helper=ModelType.GPT_3_5_TURBO_0125,
             model_config=persuader_agent_model_config,
             helper_prompt_instruction_path='prompts/helper/%s.txt' % arg.helper_prompt_instruction,
             prompt_instruction_path='prompts/persuader/%s.txt' % arg.persuader_instruction,
@@ -277,7 +290,7 @@ def main(arg):
 
         r''' Initialize the Debater Agent'''
         debater_agent = DebaterAgent(
-            model=ModelType.GPT_3_5_TURBO_0301,
+            model=ModelType.GPT_3_5_TURBO_0125,
             model_config=debater_agent_model_config_gpt,
             prompt_instruction_path='prompts/debater/%s.txt' % arg.debater_instruction,
             variables=get_variables(data.loc[i], AgentType.DEBATER_AGENT),
@@ -292,7 +305,7 @@ def main(arg):
 
 
 if __name__ == '__main__':
-
     arg = define_arguments()
-    palm.configure(api_key=arg.api_key_palm)
+    # Using environment variable for Google API key instead of command-line argument
+    genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
     main(arg)
