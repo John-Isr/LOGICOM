@@ -1,6 +1,10 @@
-pip install openai
-pip install google-generativeai
-pip install tenacity
-pip install tiktoken
-pip install pandas
-pip install colorama
+openai
+google-generativeai
+pandas
+pyyaml
+requests
+tqdm
+tenacity # For retries (used in refactored agent stubs)
+colorama # For colored terminal output (as in original)
+openpyxl # Default pandas excel engine 
+tiktoken # Added for token counting in memory 
