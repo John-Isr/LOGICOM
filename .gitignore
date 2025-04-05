@@ -1,2 +1,35 @@
+# Python bytecode files
+__pycache__/
+*.py[cod]
+*$py.class
 
-./.idea/
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# API keys and sensitive information
+API_keys
+*.key
+
+# Log files and outputs
+*.log
+debates/

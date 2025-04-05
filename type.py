@@ -2,20 +2,22 @@ from enum import Enum
 
 
 class ModelType(Enum):
-    GPT_4_COMPLETION = None
-    GPT_3_5_TURBO_COMPLETION = "text-davinci-003"
-    GPT_4_32k_COMPLETION = None
-    GPT_3_5_TURBO = "gpt-3.5-turbo"
-    GPT_3_5_TURBO_0301 = "gpt-3.5-turbo-0301"
-    GPT_3_5_TURBO_0613 = "gpt-3.5-turbo-0613"
-    GPT_3_5_TURBO_16k = "gpt-3.5-turbo-16k"
-    GPT_3_5_TURBO_16k_01613 = "gpt-3.5-turbo-16k-0613"
-    GPT_4 = "gpt-4"
-    GPT_4_0314 = "gpt-4-0314"
-    GPT_4_0613 = "gpt-4-0613"
-    GPT_4_32k = "gpt-4-32k"
-    PaLM = "models/chat-bison-001"
-    PaLM_TEXT_GENERATION = "models/chat-bison-001_TEXT"
+    # Current OpenAI Chat Models
+    GPT_3_5_TURBO = "gpt-3.5-turbo"  # Points to latest version
+    GPT_3_5_TURBO_0125 = "gpt-3.5-turbo-0125"  # Current GPT-3.5 version
+    GPT_4 = "gpt-4"  # Points to latest non-turbo version
+    GPT_4_TURBO = "gpt-4-turbo"  # Current turbo version
+    GPT_4_TURBO_0613 = "gpt-4-turbo-0613"  # Specific version of turbo
+    GPT_4O = "gpt-4o"  # GPT-4 Omni - latest version
+    GPT_4O_MINI = "gpt-4o-mini"  # Smaller, cheaper GPT-4o
+    
+    # Gemini models
+    GEMINI_1_5_FLASH_8B = "gemini-1.5-flash-8b"
+    GEMINI_1_5_FLASH = "gemini-1.5-flash"
+    GEMINI_1_5_PRO = "gemini-1.5-pro"
+    GEMINI_2_0_FLASH = "gemini-2.0-flash"
+    GEMINI_2_0_FLASH_LITE = "gemini-2.0-flash-lite"
+    GEMINI_2_0_PRO = "gemini-2.0-pro"
 
 
 class AgentType(Enum):

@@ -21,7 +21,7 @@ class Memory(BaseChatMemory, ABC):
     def __init__(self, memory_prompt_path=None, model_config: Optional[Any] = None, memory_type=None):
         self.model_config: ChatGPTConfig = ChatGPTConfig()
         self.model_backbone: ModelBackbone = ModelFactory.create(
-            model_type=ModelType.GPT_3_5_TURBO_0301)
+            model_type=ModelType.GPT_3_5_TURBO_0125)
         self.message_to_summarize: BaseChatMessageHistory = BaseChatMessageHistory()
         self.memory_prompt_path = memory_prompt_path
         self.memory_type = memory_type
