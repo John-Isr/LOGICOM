@@ -4,12 +4,35 @@ This directory contains a refactored version of the LOGICOM project, designed fo
 
 ## Architecture Overview
 
-The core principles behind this refactoring are:
+This project simulates and analyzes debates between AI agents on specific topics/claims using a structured, modular architecture.
 
-1.  **Interface-Based Design:** Core components (LLMs, Memory, Agents) interact through defined interfaces (`core/interfaces.py`), decoupling implementation details.
-2.  **Dependency Injection:** Components like LLM clients and memory objects are created based on configuration and injected into agents, rather than being created internally.
-3.  **Configuration-Driven:** Debate settings, LLM choices, prompt paths, and agent parameters are managed via YAML configuration files (`config/`).
-4.  **Clear Directory Structure:** Code is organized by functionality (`llm`, `agents`, `memory`, `core`, `utils`, `config`).
+**Core Architecture Principles:**
+
+1.  **Orchestration Pattern:** The system is centered around a `DebateOrchestrator` (`core/orchestrator.py`), which manages the turn-by-turn flow of the debate, including agent interactions and moderation checks.
+2.  **Agent-Based System:** The debate involves distinct AI agents, each with specific roles:
+    *   `PersuaderAgent`: Aims to convince the `DebaterAgent` of the claim. It can optionally use a "helper" LLM to refine its arguments or identify fallacies in the opponent's reasoning.
+    *   `DebaterAgent`: Responds to the `PersuaderAgent`, typically arguing against the claim or seeking clarification.
+    *   `ModeratorAgent`: Multiple instances monitor the debate based on specific criteria (termination conditions, topic relevance, signal detection like `[CONVINCED]`) using dedicated prompts.
+3.  **Modular Components & Interfaces:** Key functionalities are separated into modules with clearly defined interfaces (`core/interfaces.py`):
+    *   `AgentInterface`: Abstract base for all agent types.
+    *   `LLMInterface`: Abstract base for interacting with different Large Language Models.
+    *   `MemoryInterface`: Abstract base for managing conversation history for each agent (e.g., `ChatSummaryMemory` handles context limits via summarization or truncation).
+4.  **Configuration Driven:** System behavior is heavily controlled by YAML configuration files (`config/settings.yaml`, `config/models.yaml`). This allows easy modification of:
+    *   Debate parameters (max rounds, delays).
+    *   Agent configurations (LLM choice, prompts, helper usage).
+    *   LLM provider details (model names, API keys/endpoints).
+    *   Data paths and logging settings.
+5.  **LLM Abstraction:** An `LLMFactory` (`llm/llm_factory.py`) creates specific LLM client instances (e.g., `OpenAIClient`, `GeminiClient`, `LocalClient`) based on the configuration, abstracting the underlying API details.
+6.  **Prompt Management:** Agent prompts (system instructions, wrappers, helper prompts) are loaded from external files (typically in `prompts/`) and dynamically formatted with claim-specific data.
+7.  **Data Handling:** Debates are initiated based on claims loaded from a dataset (e.g., CSV), specified in the configuration.
+8.  **Entry Point & Setup (`main.py`):** The main script handles command-line arguments, loads configurations (`config/loader.py`), sets up API keys (`utils/set_api_keys.py`), prepares the debate environment (instantiating agents, LLMs, memory), iterates through claims, and invokes the orchestrator.
+9.  **Logging & Output:** Detailed debate logs (transcripts, results, metadata, token usage) are saved to files (e.g., JSON, HTML) in the `logs/` or `debates/` directory using utility functions (`utils/helpers.py`). Fallacy information is logged separately.
+
+**Overall Flow:**
+
+`main.py` -> Load Config -> Load Data -> For each Claim -> Setup Environment (Create LLMs, Memory, Agents based on config) -> Instantiate `DebateOrchestrator` -> `Orchestrator.run_debate()` -> [Debate Loop: Persuader Turn -> Debater Turn -> Moderator Checks -> Evaluate Termination Conditions] -> Save Logs & Results -> Summarize Run.
+
+This architecture promotes modularity and configurability, making it easier to experiment with different LLMs, prompts, agent strategies, and debate parameters.
 
 ## Directory Structure
 
