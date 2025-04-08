@@ -5,19 +5,17 @@ debate_settings:
   # claim_number: 1 # This setting is unused, replaced by --claim_index CLI arg
   claim_column: 'claim'
   topic_id_column: 'id'
-  column_mapping: # Added in previous step, ensure it exists or add defaults here
+  column_mapping: 
     TOPIC: "title"
     CLAIM: "claim"
-    ORIGINAL_TEXT: "original_text"
     REASON: "reason"
-    WARRANT_ONE: "warrant_one"
-    WARRANT_TWO: "warrant_two"
+  initial_prompt_path: "prompts/persuader/initial_prompt.txt"
 
   # Output Settings
   log_base_path: ./logs # Where to save debate logs 
   log_formats: [json, html, txt, xlsx] 
   # TODO: Add fallacy analysis output path option
-  fallacy_csv_path: ./logs/fallacies.csv # Path for fallacy analysis output
+  fallacy_csv_path: ./logs/fallacies.csv 
   
   # Debate Flow Control
   max_rounds: 12 # Original safety stop
@@ -25,12 +23,10 @@ debate_settings:
   turn_delay_seconds: 1 # Default delay between turns
   
   # Memory Management
-  memory_type: summarize # Options: summarize, truncate
   summarization_trigger_tokens: 6000 # Token threshold to trigger summarization
   target_prompt_tokens: 4000 # Target token limit for the prompt AFTER summarization
   keep_messages_after_summary: 4 # How many recent messages to keep alongside summary
-  # LLM for summarization
-  summarizer_llm_config_ref: gpt35_turbo
+  summarizer_system_prompt_path: ./prompts/memory/summary_instruction.txt
 
 agent_configurations:
   Default_NoHelper:
@@ -41,7 +37,6 @@ agent_configurations:
       llm_config_ref: gpt35_turbo
       # Path to prompt template (relative)
       system_instruction_path: ./prompts/persuader/persuader_system_instruction.txt
-      initial_ask_prompt_path: ./prompts/persuader/initial_ask_prompt.txt
       prompt_wrapper_path: ./prompts/persuader/persuader_prompt_wrapper.txt
       model_config_override:
         temperature: 1.0 
@@ -53,7 +48,7 @@ agent_configurations:
       # Keep placeholders commented out when helper is not used
       # llm_config_ref_helper: gpt35_turbo_0125 
       # helper_system_prompt_path: ./prompts/helper/PLACEHOLDER_HELPER_SYSTEM.txt
-      # helper_user_template_path: ./prompts/helper/PLACEHOLDER_HELPER_USER.txt
+      # helper_prompt_wrapper_path: ./prompts/helper/PLACEHOLDER_HELPER_USER.txt
       # helper_model_config_override: {}
 
     debater:
@@ -66,11 +61,10 @@ agent_configurations:
         # frequency_penalty: 0.0
       # evaluator_prompts: []
 
-    moderator_primary:
+    moderator:
       llm_config_ref: gemini_15_flash_8b 
       # Paths based on original hardcoded names for PaLM/Gemini prompts
       prompt_terminator_path: ./prompts/moderator/moderator_terminator_instruction.txt
-      prompt_tag_checker_path: ./prompts/moderator/moderator_TagChecker_instruction.txt
       prompt_topic_checker_path: ./prompts/moderator/moderator_topic_instruction.txt
       # model_config_override: { temperature: 0.5 } # Gemini client default is 0.5
 
@@ -83,7 +77,6 @@ agent_configurations:
       llm_config_ref: gpt35_turbo_0125
       # Path to prompt template (relative)
       system_instruction_path: ./prompts/persuader/persuader_system_instruction.txt
-      initial_ask_prompt_path: ./prompts/persuader/initial_ask_prompt.txt
       prompt_wrapper_path: ./prompts/persuader/persuader_prompt_wrapper.txt
       model_config_override:
         temperature: 1.0 
@@ -91,8 +84,8 @@ agent_configurations:
       # Helper Feedback Config 
       use_helper_feedback: true 
       llm_config_ref_helper: gpt35_turbo_0125 # LLM for the helper
-      helper_system_prompt_path: ./prompts/helper/fallacy_system.txt # Corrected filename
-      helper_user_prompt_path: ./prompts/helper/fallacy_wrapper.txt # Corrected filename
+      helper_system_prompt_path: ./prompts/helper/fallacy_system.txt 
+      helper_prompt_wrapper_path: ./prompts/helper/fallacy_wrapper.txt 
       helper_model_config_override: {} # Optional overrides for helper LLM
 
     debater:
@@ -102,10 +95,9 @@ agent_configurations:
       model_config_override:
         temperature: 1.0 
 
-    moderator_primary:
+    moderator:
       llm_config_ref: gemini_15_flash_8b
       prompt_terminator_path: ./prompts/moderator/moderator_terminator_instruction.txt
-      prompt_tag_checker_path: ./prompts/moderator/moderator_TagChecker_instruction.txt
       prompt_topic_checker_path: ./prompts/moderator/moderator_topic_instruction.txt
 
   # --- Default with Vanilla Helper Enabled --- 
@@ -118,7 +110,6 @@ agent_configurations:
       llm_config_ref: gpt35_turbo_0125
       # Path to prompt template (relative)
       system_instruction_path: ./prompts/persuader/persuader_system_instruction.txt
-      initial_ask_prompt_path: ./prompts/persuader/initial_ask_prompt.txt
       prompt_wrapper_path: ./prompts/persuader/persuader_prompt_wrapper.txt
       model_config_override:
         temperature: 1.0 
@@ -126,8 +117,8 @@ agent_configurations:
       # Helper Feedback Config 
       use_helper_feedback: true 
       llm_config_ref_helper: gpt35_turbo_0125 # LLM for the helper
-      helper_system_prompt_path: ./prompts/helper/logical_system.txt # Corrected filename
-      helper_user_prompt_path: ./prompts/helper/logical_wrapper.txt # Corrected filename
+      helper_system_prompt_path: ./prompts/helper/logical_system.txt 
+      helper_prompt_wrapper_path: ./prompts/helper/logical_wrapper.txt 
       helper_model_config_override: {} # Optional overrides for helper LLM
 
     debater:
@@ -137,8 +128,7 @@ agent_configurations:
       model_config_override:
         temperature: 1.0 
 
-    moderator_primary:
+    moderator:
       llm_config_ref: gemini_15_flash_8b 
       prompt_terminator_path: ./prompts/moderator/moderator_terminator_instruction.txt
-      prompt_tag_checker_path: ./prompts/moderator/moderator_TagChecker_instruction.txt
       prompt_topic_checker_path: ./prompts/moderator/moderator_topic_instruction.txt
