@@ -166,8 +166,8 @@ def _save_log_html(log_history: List[Any], file_path: str, metadata: Dict[str, A
     html_content += f'<hr>'
 
     round_num = 0
-    # Flag to track if the round number has been printed for the current pair of turns
-    round_printed = False 
+    # Flag to track if the round number has been printed for the current Persuader turn
+    round_printed_for_persuader = True # Start true so Debater doesn't trigger initially
 
     # Assuming Persuader is 'assistant' role and Debater is 'user' role for display
     # This is an assumption based on Persuader often starting.
@@ -194,14 +194,13 @@ def _save_log_html(log_history: List[Any], file_path: str, metadata: Dict[str, A
                  display_role = role_display_map.get(role, role.capitalize()) # Fallback to capitalized role
                  color = role_color_map.get(display_role, 'black') # Fallback to black
 
-                 # Increment round number logic (assuming Debater starts the round)
-                 if display_role == 'Debater' and not round_printed:
+                 # Increment round number and print heading BEFORE the Persuader's message
+                 if display_role == 'Persuader' and not round_printed_for_persuader:
                       round_num += 1
                       html_content += f'<div class="round-number">Round {round_num}</div>'
-                      round_printed = True
-                 elif display_role == 'Persuader':
-                      # Reset flag after Persuader turn, ready for next Debater turn
-                      round_printed = False
+                      round_printed_for_persuader = True # Mark as printed for this turn
+                 elif display_role == 'Debater':
+                      round_printed_for_persuader = False # Reset flag after Debater speaks
                 
                  html_content += f'<div class="log-entry" style="color:{color};">'
                  html_content += f'<span class="role-label">{html.escape(display_role)}:</span>'
