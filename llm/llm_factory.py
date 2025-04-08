@@ -1,11 +1,12 @@
+import logging
+
+# Direct import from project structure
 from core.interfaces import LLMInterface
 from llm.openai_client import OpenAIClient
 from llm.gemini_client import GeminiClient
-# Import local clients
-from llm.local_client import OllamaClient, GenericAPIClient 
-import logging # Added
+from llm.local_client import OllamaClient 
 
-logger = logging.getLogger(__name__) # Added
+logger = logging.getLogger(__name__)
 
 class LLMFactory:
     """Factory class to create LLM client instances."""
@@ -57,21 +58,22 @@ class LLMFactory:
             if not api_base_url:
                 raise ValueError("Local LLM provider requires 'api_base_url' in configuration.")
             
-            local_args = {
+            # Prepare args for OllamaClient
+            ollama_args = {
                 'base_url': api_base_url,
-                 **client_args
+                'model': client_args.get('model_name'),
+                'system': client_args.get('system_instruction')
             }
-            
-            local_type = config.get('local_type', 'ollama').lower() # Default to generic
-            
-            if local_type == 'ollama':
-                local_args.pop('api_key', None) # Ollama doesn't use key in constructor
-                if 'model_name' not in local_args:
-                     raise ValueError("Ollama client requires 'model_name' in configuration.")
-                logger.info(f"Instantiating OllamaClient with args: {local_args}") 
-                return OllamaClient(**local_args)
-            else:
-                 raise ValueError(f"Unsupported local LLM type: '{local_type}'")
+
+            # Validate required Ollama args
+            if not ollama_args['model']:
+                 raise ValueError("Ollama client requires 'model_name' (mapped to 'model') in configuration.")
+
+            # Remove None values to avoid passing them to OllamaClient if not set
+            ollama_args = {k: v for k, v in ollama_args.items() if v is not None}
+
+            logger.info(f"Instantiating OllamaClient with args: base_url='{api_base_url}', model='{ollama_args.get('model')}', system='{ollama_args.get('system', 'Not Set')}'") 
+            return OllamaClient(**ollama_args)
 
         else:
             raise ValueError(f"Unknown or unsupported LLM provider: {provider}")

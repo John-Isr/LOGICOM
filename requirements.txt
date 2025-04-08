@@ -4,7 +4,8 @@ pandas
 pyyaml
 requests
 tqdm
-tenacity # For retries (used in refactored agent stubs)
-colorama # For colored terminal output (as in original)
-openpyxl # Default pandas excel engine 
-tiktoken # Added for token counting in memory 
+tenacity
+colorama
+openpyxl
+tiktoken
+ollama

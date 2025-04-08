@@ -1,227 +1,131 @@
-import os
-import json
-from typing import List, Dict, Any, Optional
-import requests # Dependency: Add 'requests' to requirements.txt
 import logging
-from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type, before_sleep_log, RetryError
+from typing import List, Dict, Any, Optional
+import ollama
 
 # Direct import from project structure
 from core.interfaces import LLMInterface
 
-# Configure logging for tenacity
 logger = logging.getLogger(__name__)
 
-# Define exceptions to retry on for requests library
-RETRYABLE_REQUESTS_ERRORS = (
-    requests.exceptions.ConnectionError,
-    requests.exceptions.Timeout,
-    requests.exceptions.ChunkedEncodingError # Can happen with streaming-like issues
-)
+class OllamaClient(LLMInterface):
+    """LLM client implementation for Ollama API using the official library."""
+    def __init__(self, 
+                 model: str, 
+                 base_url: str | None = None, # Optional: Defaults to http://localhost:11434 if None
+                 system: Optional[str] = None):
+        """Initializes the Ollama client.
 
-# Custom retry condition for HTTP status codes (retry 5xx)
-def is_retryable_http_error(exception):
-    return (
-        isinstance(exception, requests.exceptions.HTTPError) and
-        exception.response is not None and 
-        exception.response.status_code >= 500 # Retry on server errors
-    )
-
-# Combined retry condition
-def should_retry_local_exception(exception):
-    return isinstance(exception, RETRYABLE_REQUESTS_ERRORS) or is_retryable_http_error(exception)
-
-# Callback function to log before sleeping (retry attempt)
-def log_retry_attempt(retry_state):
-    wait_time = retry_state.next_action.sleep
-    logger.warning(f"Retrying local LLM call (Attempt {retry_state.attempt_number}) after error: {retry_state.outcome.exception()}. Waiting {wait_time:.2f} seconds.")
-
-
-class BaseLocalClient(LLMInterface):
-    """Base class for clients interacting with local LLM APIs."""
-    def __init__(self, base_url: str, model_name: str | None = None, api_key: str | None = None, system_instruction: Optional[str] = None):
-        if not base_url:
-            raise ValueError("base_url must be provided for local LLM clients.")
-        self.base_url = base_url.rstrip('/') # Ensure no trailing slash
-        self.model_name = model_name
-        self.api_key = api_key # May or may not be used by subclass
-        self.system_instruction = system_instruction # Store instruction consistently
-        self._prepare_session()
-
-    def _prepare_session(self):
-        """Prepares the requests session, adding auth if needed."""
-        self.session = requests.Session()
-        # Add common headers
-        self.session.headers.update({"Content-Type": "application/json"})
-        # Add API key header if provided (common for OpenAI-compatible APIs)
-        if self.api_key:
-             self.session.headers.update({"Authorization": f"Bearer {self.api_key}"})
-
-    def generate(self, prompt: List[Dict[str, str]], **kwargs) -> str:
-        """Abstract method to be implemented by specific local clients."""
-        raise NotImplementedError("Subclasses must implement the generate method.")
-
-    def _prepare_messages_for_api(self, prompt: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """Helper to prepend system prompt and filter input messages.
-           Handles system instruction prioritization and comparison.
-           Can be overridden by subclasses if different format needed.
+        Args:
+            model: The name of the Ollama model to use (required).
+            base_url: The base URL of the Ollama server (optional).
+            system: The system prompt/instruction to use (optional).
         """
-        # Find system message in the input prompt and separate other messages
-        prompt_system_message_content = None
-        other_messages = []
+        if not model:
+            raise ValueError("Ollama client requires a 'model' name.")
+        
+        self.model = model
+        self.system = system # Store system prompt
+        
+        # Initialize the ollama client targeting the specified host or default
+        # The 'host' parameter in ollama.Client corresponds to the base_url
+        self.client = ollama.Client(host=base_url) 
+        logger.info(f"Initialized OllamaClient for model '{self.model}' at host '{base_url or 'default'}. System prompt {'set' if self.system else 'not set'}.\"")
+
+    def _prepare_messages(self, prompt: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Prepares messages for the Ollama API. 
+           Handles system prompt precedence and conversion.
+        """
+        messages = []
+        prompt_system_content = None
+        
+        # Extract user/assistant messages and find first system message from prompt
         for msg in prompt:
-            if msg.get("role") == "system":
-                if prompt_system_message_content is None:
-                    prompt_system_message_content = msg.get("content")
-                # else: No warning if multiple system messages are in the prompt, just use the first.
-            else:
-                other_messages.append(msg)
-
-        messages_to_send = []
-        # Decide which system prompt to use and add it first (based on internal self.system_instruction which came from init's system_instruction)
-        if prompt_system_message_content is not None:
-            # Prioritize prompt's system message
-            if prompt_system_message_content:
-                messages_to_send.append({"role": "system", "content": prompt_system_message_content})
-            if self.system_instruction: # Check against the internally stored instruction
-                # Compare the two system instructions/prompts
-                if prompt_system_message_content == self.system_instruction:
-                    logger.warning("System instruction provided during init AND a matching system message found in generate() prompt (and they match). Prioritizing the one from generate().")
-                else:
-                    logger.error("CONFLICT: System instruction provided during init differs from system message in generate() prompt. Prioritizing the one from generate(), but check configuration.")
-        elif self.system_instruction:
-            # Fallback to init's system instruction
-            messages_to_send.append({"role": "system", "content": self.system_instruction})
-
-        # Add the rest of the messages (user/assistant)
-        messages_to_send.extend(other_messages)
-        
-        # Ensure there's at least one non-system message if system prompt was the only thing
-        if not any(msg['role'] != 'system' for msg in messages_to_send):
-            # Returning error message might be better than raising here, similar to OpenAIClient
-            logger.error("Prompt contains only system message(s), cannot make API call.")
-            # Raise an error or return a specific signal? Returning error string for now.
-            return {"error": "Error: No user/assistant message in prompt."} # Return error signal
-            
-        return messages_to_send
-
-
-class OllamaClient(BaseLocalClient):
-    """Client for interacting with an Ollama server API."""
-    # Note: Ollama typically doesn't use API keys by default
-
-    @retry(
-        stop=stop_after_attempt(4), 
-        wait=wait_random_exponential(multiplier=3, max=30),
-        retry=should_retry_local_exception,
-        before_sleep=log_retry_attempt
-    )
-    def generate(self, prompt: List[Dict[str, str]], **kwargs) -> str:
-        """Generates response using Ollama /api/chat endpoint with retry logic."""
-        if not self.model_name:
-             raise ValueError("Ollama client requires a 'model_name' to be specified.")
-             
-        api_url = f"{self.base_url}/api/chat"
-        
-        # Prepare messages using base class helper
-        messages_to_send = self._prepare_messages_for_api(prompt)
-        if isinstance(messages_to_send, dict) and "error" in messages_to_send:
-            return messages_to_send["error"]
-            
-        # Convert roles for Ollama ('assistant')
-        ollama_messages = []
-        for msg in messages_to_send:
             role = msg.get('role')
-            # Map system role to system for Ollama if needed (check API)
-            # Assuming system handled via prompt, map ai/model to assistant
-            if role == 'ai' or role == 'model':
-                 role = 'assistant'
-            elif role == 'system': # Pass system prompt role through if present
-                 pass 
-            # Keep user role as is
-            ollama_messages.append({'role': role, 'content': msg.get('content')})
+            content = msg.get('content')
+            if not content:
+                continue
 
+            if role == 'system':
+                if prompt_system_content is None:
+                    prompt_system_content = content
+                # Don't add system message to the list here, handled separately
+            elif role == 'user':
+                messages.append({'role': 'user', 'content': content})
+            elif role == 'assistant' or role == 'ai' or role == 'model':
+                messages.append({'role': 'assistant', 'content': content}) # Ollama uses 'assistant'
+        
+        # Determine the effective system prompt
+        effective_system_prompt = self.system # Start with the one from init
+        if prompt_system_content is not None:
+            if effective_system_prompt is not None and prompt_system_content != effective_system_prompt:
+                 logger.error(f"CONFLICT: System prompt from init ('{effective_system_prompt[:50]}...') differs from prompt ('{prompt_system_content[:50]}...'). Prioritizing prompt's system message.\"")
+            effective_system_prompt = prompt_system_content # Prioritize prompt's system message
+        
+        # Prepend the effective system prompt if it exists
+        if effective_system_prompt:
+             # Check if the first message is already a system message (shouldn't happen with current logic, but safe)
+             if not messages or messages[0].get('role') != 'system':
+                  # Insert system message at the beginning if one exists
+                  messages.insert(0, {'role': 'system', 'content': effective_system_prompt})
+             elif messages: # If first message IS system (e.g., if logic changes), update it
+                  messages[0]['content'] = effective_system_prompt
+                  
+        if not any(m['role'] == 'user' for m in messages):
+             logger.error("Ollama messages prepared without a user role after processing.\"")
+             # TODO:Consider how to handle this - raise error or return error string?
+             # Returning error for consistency with previous pattern
+             return {"error": "Error: No user message found in prompt."}
+
+        return messages
+
+    def generate(self, prompt: List[Dict[str, str]], **kwargs) -> str:
+        """Generates a response using the Ollama API via the ollama library."""
+        
+        # Prepare messages, handle potential error signal from preparation
+        messages = self._prepare_messages(prompt)
+        if isinstance(messages, dict) and "error" in messages:
+             return messages["error"]
+
+        # Extract known options for Ollama, pass others in 'options' dict
         options = {}
         if 'temperature' in kwargs: options['temperature'] = kwargs['temperature']
-        if 'max_tokens' in kwargs: options['num_predict'] = kwargs['max_tokens'] 
+        if 'max_tokens' in kwargs: options['num_predict'] = kwargs['max_tokens'] # Map max_tokens to num_predict
+        # Add any other desired Ollama options from kwargs here
         
-        payload = {
-            "model": self.model_name,
-            "messages": ollama_messages, # Use Ollama formatted messages
-            "stream": False, 
-            "options": options
+        # Prepare parameters for the ollama.chat call
+        request_params = {
+            'model': self.model,
+            'messages': messages,
+            'stream': False, # Keep it simple, no streaming for now
+            'options': options if options else None,
+            'keep_alive': kwargs.get('keep_alive') # Pass keep_alive if provided
         }
+        # Filter out None values for cleaner API call
+        request_params = {k: v for k, v in request_params.items() if v is not None}
+
+        logger.debug(f"Ollama API Request: {request_params}\"")
 
         try:
-            response = self.session.post(api_url, json=payload)
-            response.raise_for_status() 
-            response_data = response.json()
+            # Use the client's chat method
+            response = self.client.chat(**request_params)
             
-            if response_data.get('message') and response_data['message'].get('content'):
-                return response_data['message']['content'].strip()
+            logger.debug(f"Ollama API Response: {response}\"")
+
+            # Extract the content from the response structure
+            if response and isinstance(response, dict) and response.get('message'):
+                content = response['message'].get('content')
+                if content:
+                    return content.strip()
+                else:
+                     logger.warning(f"Ollama response message content is empty. Response: {response}\"")
+                     return ""
             else:
-                 logger.warning(f"Ollama response missing expected message content. Response: {response_data}")
+                 logger.warning(f"Ollama response missing expected structure or message key. Response: {response}\"")
                  return ""
-                 
-        except RetryError as e:
-            logger.error(f"Ollama call failed after multiple retries: {e}", exc_info=True)
-            raise 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Non-retryable error calling Ollama API at {api_url}: {e}", exc_info=True)
-            raise
+
         except Exception as e:
-            logger.error(f"An unexpected error occurred during Ollama call: {e}", exc_info=True)
-            raise
+            # Catch exceptions from the ollama library (e.g., connection errors, API errors)
+            logger.error(f"Error during Ollama API call: {e}", exc_info=True)
+            # Decide how to handle - returning error string for now
+            return f"Error: Ollama API call failed - {e}"
 
-class GenericAPIClient(BaseLocalClient):
-    """Client for local LLMs exposing an OpenAI-compatible /v1/chat/completions endpoint."""
-
-    @retry(
-        stop=stop_after_attempt(4), 
-        wait=wait_random_exponential(multiplier=3, max=30),
-        retry=should_retry_local_exception,
-        before_sleep=log_retry_attempt
-    )
-    def generate(self, prompt: List[Dict[str, str]], **kwargs) -> str:
-        """Generates response using OpenAI-compatible /v1/chat/completions endpoint with retry logic."""
-        api_url = f"{self.base_url}/v1/chat/completions"
-        
-        model = kwargs.pop('model', self.model_name)
-        if not model:
-             logger.warning("No model name specified for generic API call.")
-
-        # Prepare messages using base class helper
-        messages_to_send = self._prepare_messages_for_api(prompt)
-        if isinstance(messages_to_send, dict) and "error" in messages_to_send:
-            return messages_to_send["error"]
-            
-        payload = {
-            "model": model,
-            "messages": messages_to_send, # Use prepared messages
-            "stream": False,
-            **kwargs # Pass other OpenAI-compatible params like temperature, max_tokens, stop
-        }
-
-        try:
-            response = self.session.post(api_url, json=payload)
-            response.raise_for_status() # raise_for_status will be caught by tenacity for 5xx errors
-            response_data = response.json()
-
-            # Extract message content (following OpenAI structure)
-            if response_data.get('choices'):
-                message = response_data['choices'][0].get('message')
-                if message and message.get('content'):
-                    return message['content'].strip()
-            
-            logger.warning(f"OpenAI-compatible response missing expected content. Response: {response_data}")
-            return "" # Return empty if no content found
-
-        except RetryError as e: # Catch tenacity's RetryError
-            logger.error(f"Generic API call failed after multiple retries: {e}", exc_info=True)
-            raise # Re-raise the final error
-        except requests.exceptions.RequestException as e:
-            # Log non-retryable request errors (like 4xx)
-            logger.error(f"Non-retryable error calling Generic API at {api_url}: {e}", exc_info=True)
-            raise
-        except Exception as e:
-            logger.error(f"An unexpected error occurred during Generic API call: {e}", exc_info=True)
-            raise 
