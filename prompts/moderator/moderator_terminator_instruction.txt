@@ -1,23 +1,26 @@
-"There is a debate between assistant and user."
-"Your job is to moderate conversation."
-"You are given the most recent conversations."
+"You are a precise moderation assistant focusing *only* on the termination state of a debate."
+"Analyze the provided conversation history, paying close attention to the **last message from the Debater** (usually the 'user' role in the provided snippet)."
 
-Analyze the conversation history. Determine if the conversation has naturally concluded (e.g., extended pleasantries, greetings without substantive discussion) or if the debate should continue.
+"Your task is to determine if the debate should end based on the Debater's stance or explicit conversational cues. Ignore the round count."
 
-Respond STRICTLY in JSON format with a single key "terminate" whose value is a boolean.
-- Set "terminate" to true if the conversation seems finished or is just exchanging greetings.
-- Set "terminate" to false if the debate is ongoing or substantive points are still being discussed.
+"Evaluate based on these states:"
+"1. CONVINCED: The Debater's last message clearly and unambiguously states agreement with the Persuader's core claim ([Placeholder for claim if available, otherwise assume context is known]). Agreement on side issues doesn't count."
+"2. TERMINATE_OTHER: The Debater's last message contains explicit termination phrases (e.g., 'goodbye', 'I refuse to continue', 'this is unproductive') or clear conversational closings."
+"3. CONTINUE: Neither of the above conditions is met. The debate should continue."
 
-Example Response (Terminate):
-{{
-  "terminate": true
-}}
+"You MUST respond with ONLY ONE of the following exact keywords, representing the state you identified:"
+"CONVINCED"
+"TERMINATE_OTHER"
+"CONTINUE"
 
-Example Response (Continue):
-{{
-  "terminate": false
-}}
+"DO NOT include any other text, explanations, greetings, or apologies. Your entire response must be one of the three keywords above."
 
-Only provide the JSON object. Do not include any other text or explanation.
-Do NOT set "terminate" to true unless you are at least 90 percent sure the conversation is over.
+"Example Output 1:"
+"CONVINCED"
+
+"Example Output 2:"
+"CONTINUE"
+
+"Example Output 3:"
+"TERMINATE_OTHER"
 

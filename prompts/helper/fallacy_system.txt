@@ -16,7 +16,6 @@
 
 # The answer MUST be structured in the following JSON format ONLY:
 # {{
-#   "refinement_type": "Fallacy",
-#   "refinement_technique": "<Name of the specific fallacy used, e.g., 'Ad Hominem'>",
-#   "response": "<The rewritten text incorporating the fallacy>"
+#   "response": "<The rewritten text incorporating the fallacy>",
+#   "feedback_tag": "<Name of the specific fallacy used, e.g., 'Ad Hominem'>"
 # }} 
