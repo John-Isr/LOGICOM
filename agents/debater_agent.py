@@ -1,12 +1,9 @@
-import ast
 from typing import Any, Optional, Dict, List
-import logging
 
 # Direct imports from project structure
 from agents.base_agent import BaseAgent
 from core.interfaces import LLMInterface, MemoryInterface
 
-import logging
 
 class DebaterAgent(BaseAgent):
     """Agent responsible for debating against the persuader's points."""
@@ -26,21 +23,21 @@ class DebaterAgent(BaseAgent):
         self.variables = variables or {}
 
     def call(self, opponent_message: str) -> str:
+        #TODO: simplify this so it takes the opponent message and wraps it, adds to a memory read, and then generates a response, then adds to memory the original opponent message and the response
         """Generates a response to the opponent's message."""
         self.memory.add_user_message(opponent_message)
         # Get history from memory
-        prompt_history = self.memory.get_prompt()
+        prompt = self.memory.get_history_as_prompt()
 
         # Apply prompt wrapping using the BaseAgent helper method
         # Assumes wrapper uses {LAST_OPPONENT_MESSAGE}
-        final_prompt_to_send = self._apply_prompt_wrapper(prompt_history)
+        final_prompt_to_send = self._apply_prompt_wrapper(prompt)
 
-        # BaseAgent._generate_response calls the client, which handles system prompt
-        response_content, prompt_sent = self._generate_response(final_prompt_to_send)
+        response_content = self._generate_response(final_prompt_to_send)
         
         # Add response to memory with prompt/response metadata
         log_metadata = {
-             "prompt_sent": prompt_sent,
+             "prompt_sent": final_prompt_to_send,
              "raw_response": response_content
         }
         self.memory.add_ai_message(response_content, **log_metadata)

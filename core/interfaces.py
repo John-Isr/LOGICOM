@@ -2,10 +2,10 @@ from abc import ABC, abstractmethod
 from typing import Any, List, Dict
 from enum import Enum
 
-# Define AgentType enum here
-class AgentType(Enum):
-    PERSUADER_AGENT = "PersuaderAgent"
-    DEBATER_AGENT = "DebaterAgent"
+# --- Internal Standard Role Names ---
+INTERNAL_USER_ROLE = "user"
+INTERNAL_AI_ROLE = "assistant"
+# ------------------------------------
 
 class LLMInterface(ABC):
     """Interface for Large Language Model interaction."""
@@ -38,7 +38,7 @@ class MemoryInterface(ABC):
         pass
 
     @abstractmethod
-    def get_prompt(self) -> List[Dict[str, str]]:
+    def get_history_as_prompt(self) -> List[Dict[str, str]]:
         """
         Formats and returns the current conversation history as a prompt
         suitable for the LLMInterface, potentially handling context length limits.

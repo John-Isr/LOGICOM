@@ -5,7 +5,7 @@ from google.api_core import exceptions as google_exceptions
 import logging
 
 # Direct import from project structure
-from core.interfaces import LLMInterface
+from core.interfaces import LLMInterface, INTERNAL_USER_ROLE, INTERNAL_AI_ROLE
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +14,10 @@ class GeminiClient(LLMInterface):
     """LLM client implementation for Google Gemini API.
     Uses the system_instruction parameter for models that support it.
     """
+    # Role names expected by the Gemini API
+    GEMINI_USER_ROLE = "user"
+    GEMINI_MODEL_ROLE = "model"
+
     def __init__(self, 
                  api_key: str | None = None, 
                  model_name: str = "gemini-1.5-flash-8b", #TODO: I don't like the fact that this is hardcoded here, consider reading from config/settings.yaml
@@ -42,7 +46,9 @@ class GeminiClient(LLMInterface):
             raise
 
     def _convert_prompt_format(self, prompt: List[Dict[str, str]]) -> List[Dict[str, Any]]:
-        """Converts OpenAI-style prompt list (excluding system) to Gemini format (user, model)."""
+        """Converts internal standard prompt list to Gemini format.
+           Handles the role mapping from 'assistant' to 'model'.
+        """
         gemini_prompt = []
         prompt_system_message_content = None
 
@@ -60,21 +66,23 @@ class GeminiClient(LLMInterface):
                      if prompt_system_message_content is None: # Store the first one found
                           prompt_system_message_content = content
                 continue 
-            elif role == 'user':
-                gemini_prompt.append({'role': 'user', 'parts': [content]})
-            elif role == 'assistant' or role == 'ai' or role == 'model':
-                gemini_prompt.append({'role': 'model', 'parts': [content]})
+            # Map internal standard roles to Gemini roles
+            elif role == INTERNAL_USER_ROLE:
+                gemini_prompt.append({'role': self.GEMINI_USER_ROLE, 'parts': [content]})
+            elif role == INTERNAL_AI_ROLE:
+                gemini_prompt.append({'role': self.GEMINI_MODEL_ROLE, 'parts': [content]})
+            else:
+                # Log unexpected roles but don't necessarily fail, let API handle it?
+                logger.warning(f"Gemini client received message with unexpected role '{role}'. Passing through.")
+                gemini_prompt.append({'role': role, 'parts': [content]}) # Pass unknown roles as-is
         
         # After the loop, compare the found system message (if any) with the init one
         if prompt_system_message_content is not None and self.system_instruction is not None:
-             if prompt_system_message_content == self.system_instruction:
-                  logger.warning("System instruction provided during init AND a matching system message found in the prompt. Using the init instruction.")
-             else:
-                  logger.error("CONFLICT: System instruction provided during init differs from system message found in prompt. Using the init instruction, but check configuration.")
+             if prompt_system_message_content != self.system_instruction:
+                  logger.error("CONFLICT: System instruction provided during init differs from system message found in prompt. Using the init instruction.")
 
         # Note: Assumes alternating user/model roles in the input after system message removal.
         # TODO: Add validation or merging logic if needed.
-        
         return gemini_prompt
 
 

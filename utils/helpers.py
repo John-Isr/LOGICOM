@@ -2,13 +2,12 @@ import os
 import json
 import html
 import shutil
-import pandas as pd # Required for save_xlsx, save_fallacy
+import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple
-# Remove local Enum import: from enum import Enum # For placeholder AgentType
-import logging # Added
+import logging 
 
 # Direct import from project structure
-from core.interfaces import AgentType 
+from core.interfaces import INTERNAL_USER_ROLE, INTERNAL_AI_ROLE
 
 logger = logging.getLogger(__name__) # Added
 
@@ -81,13 +80,13 @@ def load_prompt_template(file_path: str, variables: Optional[Dict[str, Any]] = N
 
 # --- Variable Extraction --- 
 
-def extract_claim_data_for_prompt(claim_data: pd.Series, agent_type: AgentType, column_mapping: Dict[str, str]) -> Dict[str, str]:
+def extract_claim_data_for_prompt(claim_data: pd.Series, column_mapping: Dict[str, str]) -> Dict[str, str]:
     """
-    Extracts variables for prompts based on agent type from input data using configurable column names.
+    Extracts variables for prompts from input data using configurable column names.
+    Currently extracts: TOPIC, CLAIM, REASON.
     
     Args:
         claim_data: The data record (e.g., a row from a pandas DataFrame).
-        agent_type: The type of agent (AgentType.PERSUADER_AGENT or AgentType.DEBATER_AGENT).
         column_mapping: Dictionary mapping standard prompt variable names 
                         (e.g., "TOPIC", "CLAIM", "ORIGINAL_TEXT", "REASON", 
                          "WARRANT_ONE", "WARRANT_TWO") to the actual column 
@@ -98,7 +97,8 @@ def extract_claim_data_for_prompt(claim_data: pd.Series, agent_type: AgentType, 
     """
     base_vars = {}
     # Map standard variables to columns using the provided mapping
-    vars_to_extract = ["TOPIC", "CLAIM", "ORIGINAL_TEXT", "REASON", "WARRANT_ONE", "WARRANT_TWO"]
+    # Only extract variables currently used in prompts
+    vars_to_extract = ["TOPIC", "CLAIM", "REASON"] 
     for var_name in vars_to_extract:
         column_name = column_mapping.get(var_name)
         if column_name:
@@ -107,15 +107,6 @@ def extract_claim_data_for_prompt(claim_data: pd.Series, agent_type: AgentType, 
             logger.warning(f"No column mapping provided for standard variable '{var_name}'. It will be empty.")
             base_vars[var_name] = ''
 
-    # Keep the side logic as it is agent-dependent, not column-dependent
-    if agent_type == AgentType.DEBATER_AGENT:
-        base_vars["SIDE"] = "ONE"
-        base_vars["O-SIDE"] = "TWO"
-    elif agent_type == AgentType.PERSUADER_AGENT:
-        base_vars["SIDE"] = "TWO"
-        base_vars["O-SIDE"] = "ONE"
-    else:
-        logger.warning(f"Unknown agent type {agent_type} for variable extraction.")
 
     return base_vars
 
@@ -381,6 +372,46 @@ def save_debate_log(log_history: List[Any],
         
     if 'xlsx' in save_formats:
         _save_log_xlsx(xlsx_summary_path, metadata)
+
+    # --- Process Log History for Fallacies (Moved from Orchestrator) --- 
+    # Check if fallacy logging is desired (e.g., based on save_formats or a specific flag)
+    # Assuming we always process if the function is called, and save_fallacy_data handles file creation.
+    # Alternatively, could check if a specific 'fallacy_csv' format is in save_formats.
+    
+    fallacy_log_path = os.path.join(log_base_path, "fallacies.csv") # Define path
+    logger.info(f"Processing log history for fallacies (logging to {fallacy_log_path})...")
+    
+    last_opponent_message = None 
+    processed_fallacy_count = 0
+    for i, entry in enumerate(log_history):
+        if entry.get("type") == "message":
+            entry_data = entry.get("data", {})
+            entry_role = entry_data.get("role")
+            
+            if entry_role == INTERNAL_USER_ROLE: # Uses INTERNAL_USER_ROLE from core.interfaces
+                last_opponent_message = entry_data.get("content")
+            elif entry_role == INTERNAL_AI_ROLE: # Uses INTERNAL_AI_ROLE from core.interfaces
+                entry_metadata = entry.get("metadata", {})
+                feedback_tag = entry_metadata.get("feedback_tag") 
+                
+                if feedback_tag: 
+                    original_response = entry_metadata.get("raw_response")
+                    if original_response:
+                            save_fallacy_data(
+                                csv_path=fallacy_log_path,
+                                data_to_append={
+                                    "Topic_ID": topic_id,
+                                    "Chat_ID": chat_id,
+                                    "Argument": original_response,
+                                    "Counter_Argument": last_opponent_message,
+                                    "Fallacy": feedback_tag,
+                                }
+                            )
+                            processed_fallacy_count += 1
+                    else:
+                            logger.warning(f"Found feedback_tag '{feedback_tag}' in log entry {i} but missing raw_response in metadata.")
+    logger.info(f"Finished processing fallacies. Found and logged {processed_fallacy_count} instances.")
+    # ------------------------------------------------------------------
 
 # --- Other Utilities --- 
 

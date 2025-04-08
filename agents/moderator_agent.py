@@ -1,13 +1,8 @@
-import re
-from typing import Any, Optional, Dict, List, NamedTuple
+from typing import Any, Optional, Dict, List
 
 # Direct imports from project structure
 from agents.base_agent import BaseAgent
 from core.interfaces import LLMInterface, MemoryInterface
-
-import logging
-
-logger = logging.getLogger(__name__)
 
 class ModeratorAgent(BaseAgent):
     """Agent responsible for performing a *single* specific moderation check."""
@@ -23,10 +18,6 @@ class ModeratorAgent(BaseAgent):
 
         self.variables = variables or {}
 
-    def reset(self) -> None:
-        """Resets internal state (e.g., token count)."""
-        # Only need to reset base class state now
-        super().reset()
 
     # Call method takes specific context needed for *this* check 
     # Return value is the *raw result* of the check (e.g., a tag string, a boolean)
@@ -39,12 +30,11 @@ class ModeratorAgent(BaseAgent):
             context: Relevant conversation history or specific message.
 
         Returns:
-            The raw, stripped response string from the LLM, or None if the
+            The raw response string from the LLM, or None if the
             LLM returns an empty response.
         """
         # Format the user part of the prompt based on the context
         if isinstance(context, list):
-             # Simplified history formatting for prompt              
              history_str = "\n".join([f"{msg.get('role')}: {msg.get('content')}" for msg in context])
              user_content = f"Analyze the following recent history:\n{history_str}"
         elif isinstance(context, str):
@@ -54,10 +44,9 @@ class ModeratorAgent(BaseAgent):
              raise TypeError(f"Moderator ({self.agent_name}) received unexpected context type: {type(context)}. Expected str or List[Dict].")
 
         # Construct the history part (only user message)
-        prompt_history = [{"role": "user", "content": user_content}]
+        prompt = [{"role": "user", "content": user_content}]
 
-        # Call _generate_response. Exceptions will propagate up.
-        response_content, prompt_sent = self._generate_response(prompt_history)
+        response_content = self._generate_response(prompt)
 
-        # Return the  response content string and the prompt sent
-        return response_content, prompt_sent
+        # Return the raw response content string, and the prompt sent
+        return response_content
