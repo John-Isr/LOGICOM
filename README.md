@@ -25,23 +25,24 @@ This project simulates and analyzes debates between AI agents on specific topics
 5.  **LLM Abstraction:** An `LLMFactory` (`llm/llm_factory.py`) creates specific LLM client instances (e.g., `OpenAIClient`, `GeminiClient`, `LocalClient`) based on the configuration, abstracting the underlying API details.
 6.  **Prompt Management:** Agent prompts (system instructions, wrappers, helper prompts) are loaded from external files (typically in `prompts/`) and dynamically formatted with claim-specific data.
 7.  **Data Handling:** Debates are initiated based on claims loaded from a dataset (e.g., CSV), specified in the configuration.
-8.  **Entry Point & Setup (`main.py`):** The main script handles command-line arguments, loads configurations (`config/loader.py`), sets up API keys (`utils/set_api_keys.py`), prepares the debate environment (instantiating agents, LLMs, memory), iterates through claims, and invokes the orchestrator.
-9.  **Logging & Output:** Detailed debate logs (transcripts, results, metadata, token usage) are saved to files (e.g., JSON, HTML) in the `logs/` or `debates/` directory using utility functions (`utils/helpers.py`). Fallacy information is logged separately.
+8.  **Entry Point & Setup (`main.py`):** The main script handles command-line arguments, loads configurations (`config/loader.py`), sets up API keys (`utils/set_api_keys.py`), prepares the debate environment *for each claim* by instantiating `core.debate_setup.DebateInstanceSetup` (which creates agents, LLMs, memory), iterates through claims, and invokes the orchestrator.
+9.  **Logging & Output:** Detailed debate logs (transcripts, results, metadata, token usage) are saved to structured directories within the path defined by `log_base_path` in `config/settings.yaml` (default: `logs/`). Logs are saved per claim and configuration in the format `<log_base_path>/<topic_id>/<helper_type>/<chat_id>.[format]`. A summary Excel file (`all_debates_summary.xlsx`) and fallacy CSV (`fallacies.csv`) are saved directly in the `log_base_path`. Logging is handled by `utils/helpers.save_debate_log`.
 
 **Overall Flow:**
 
-`main.py` -> Load Config -> Load Data -> For each Claim -> Setup Environment (Create LLMs, Memory, Agents based on config) -> Instantiate `DebateOrchestrator` -> `Orchestrator.run_debate()` -> [Debate Loop: Persuader Turn -> Debater Turn -> Moderator Checks -> Evaluate Termination Conditions] -> Save Logs & Results -> Summarize Run.
+`main.py` -> Load Config -> Load Data -> For each Claim -> Instantiate `DebateInstanceSetup` (Create LLMs, Memory, Agents based on config) -> Instantiate `DebateOrchestrator` -> `Orchestrator.run_debate()` -> [Debate Loop: Persuader Turn -> Debater Turn -> Moderator Checks -> Evaluate Termination Conditions] -> `save_debate_log` (Save Logs & Results, Process Fallacies) -> Summarize Run.
 
 This architecture promotes modularity and configurability, making it easier to experiment with different LLMs, prompts, agent strategies, and debate parameters.
 
 ## Directory Structure
 
 ```
-Reworked/
+LOGICOM/ # Project Root
 ├── main.py                 # Main entry point: parses args, loads config, sets up, runs debates
 ├── core/
-│   ├── interfaces.py       # Defines core ABCs (LLMInterface, AgentInterface, MemoryInterface, AgentType)
-│   └── orchestrator.py     # High-level debate loop logic, manages agent turns and moderation
+│   ├── interfaces.py       # Defines core ABCs (LLMInterface, AgentInterface, MemoryInterface)
+│   ├── orchestrator.py     # High-level debate loop logic, manages agent turns and moderation
+│   └── debate_setup.py     # Handles claim-specific setup (prompts, clients, agents, memory)
 ├── llm/
 │   ├── __init__.py
 │   ├── llm_factory.py      # Factory to create LLM clients based on config
@@ -67,14 +68,22 @@ Reworked/
 ├── utils/
 │   ├── __init__.py
 │   ├── set_api_keys.py     # Script to set API keys as environment variables
-│   └── helpers.py          # Utility functions (prompt loading, logging, etc.)
-├── data/                   # Data directory referenced in config
+│   └── helpers.py          # Utility functions (prompt loading/formatting, logging, file handling)
+├── claims/                 # Default data directory containing claim datasets (e.g., CSV)
 │   └── ...
-├── logs/                   # Default output directory for debate logs
+├── logs/                   # Default output directory for debate logs, summaries, and fallacy reports
+│   ├── <topic_id>/         # Subdirectory for each claim/topic
+│   │   └── <helper_type>/  # Subdirectory for each agent config run
+│   │       └── <chat_id>.[json|html|txt] # Individual debate logs
+│   ├── all_debates_summary.xlsx # Summary of all runs
+│   └── fallacies.csv       # Log of detected fallacies (if applicable)
+├── debates/                # (legacy / alternative log directory - TODO:check usage)
 │   └── ...
 ├── API_keys                # (Gitignored) File to store API keys locally
 ├── API_keys.template       # Template for the API keys file
 ├── requirements.txt        # Python package dependencies
+├── .gitignore              # Specifies intentionally untracked files for Git
+├── LICENSE                 # Project license information
 └── README.md               # This file
 ```
 
@@ -99,8 +108,8 @@ Reworked/
         ```
     *   **(Less Secure) Edit `config/models.yaml`:** Add your keys directly into the `models.yaml` file under the respective provider configurations.
 
-3.  **Data:** Ensure the dataset specified in `config/settings.yaml` (`debate_settings.data_path`) is accessible. The default configuration points to `./data/claims/all-claim-not-claim.csv` relative to the project root.
-4.  **Prompts:** Ensure the prompt files referenced in `config/settings.yaml` exist within the `prompts/` directory.
+3.  **Data:** Ensure the dataset specified in `config/settings.yaml` (`debate_settings.data_path`) is accessible. The default configuration points to `./claims/all-claim-not-claim.csv` relative to the project root. `main.py` will attempt to resolve this path relative to its own location if the direct path isn't found.
+4.  **Prompts:** Ensure the prompt files referenced in `config/settings.yaml` exist within the `prompts/` directory or paths specified.
 
 ## Running
 
@@ -112,15 +121,15 @@ python main.py [OPTIONS]
 
 **Options:**
 
-*   `--config_run_name <NAME>`: Specifies which agent configuration section from `settings.yaml` to use (default: `OriginalDefault`).
+*   `--config_run_name <NAME>`: Specifies which agent configuration section from `settings.yaml` to use (default: `Default_NoHelper`).
 *   `--claim_index <INDEX>`: Run only for a specific claim index (0-based) in the dataset. If omitted, runs for all claims.
 *   `--settings_path <PATH>`: Path to the settings YAML file (default: `./config/settings.yaml`).
 *   `--models_path <PATH>`: Path to the models YAML file (default: `./config/models.yaml`).
 
-**Example:** Run the default 'OriginalDefault' configuration for claim index 5:
+**Example:** Run the default 'Default_NoHelper' configuration for claim index 5:
 
 ```bash
-python main.py --config_run_name OriginalDefault --claim_index 5 
+python main.py --config_run_name Default_NoHelper --claim_index 5 
 ```
 
 **Example:** Run a hypothetical 'LocalRun_Llama3' configuration for all claims:
@@ -133,8 +142,8 @@ python main.py --config_run_name LocalRun_Llama3
 
 *   **`config/models.yaml`**: Define different LLM providers (OpenAI, Gemini, local) and their connection details (API keys/endpoints, model names, default parameters).
 *   **`config/settings.yaml`**: 
-    *   `debate_settings`: Configure data paths, logging options, max rounds.
-    *   `agent_configurations`: Define different named setups (e.g., `OriginalDefault`, `LocalRun_Llama3`). Each setup specifies which LLM config (`llm_config_ref`), prompt template, and specific parameters to use for the Persuader, Debater, and Moderator(s).
+    *   `debate_settings`: Configure data paths (using `claims/` by default), logging options (`log_base_path` defaults to `logs/`, log formats), max rounds, memory settings, column mappings.
+    *   `agent_configurations`: Define different named setups (e.g., `Default_NoHelper`, `Default_FallacyHelper`). Each setup specifies which LLM config (`llm_config_ref`), prompt template paths, and specific parameters to use for the Persuader, Debater, and Moderator(s).
 
 ## Local LLMs
 
