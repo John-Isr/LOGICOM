@@ -1,311 +1,185 @@
 import os
-
-# Set OpenAI API key from the API_keys file
-try:
-    with open('API_keys', 'r') as f:
-        for line in f:
-            if 'OpenAI_API_key:' in line:
-                os.environ["OPENAI_API_KEY"] = line.split('OpenAI_API_key:')[1].strip()
-            elif 'Google_API_key:' in line:
-                os.environ["GOOGLE_API_KEY"] = line.split('Google_API_key:')[1].strip()
-except Exception as e:
-    print(f"Error loading API keys: {e}")
-
-import time
-import openai
-
-from tqdm import tqdm
-import google.generativeai as genai
-from agents.modertorAgent import ModeratorAgent
-from config.gptconfig import ChatGPTConfig
-
-from utils import *
+import sys
 import argparse
-from agents.persuaderAgent import PersuaderAgent
-from agents.debaterAgent import DebaterAgent
-from colorama import init, Fore, Back, Style
+import pandas as pd
+from tqdm import tqdm
+from typing import Dict, Any, Optional, Tuple
+import logging
 
-import uuid
+# --- Direct Imports ---
+from utils.set_api_keys import set_environment_variables_from_file, API_KEYS_PATH
+from config.loader import load_app_config
+from core.orchestrator import DebateOrchestrator
+from core.debate_setup import DebateInstanceSetup
 
-init()
+# Use colorama for terminal colors
+from colorama import init, Fore, Style
+init(autoreset=True)
 
+# Define logger at module level
+logger = logging.getLogger(__name__)
 
-def define_arguments():
-    parser = argparse.ArgumentParser(description="Your script description here")
-
-    parser.add_argument("--api_key_openai", required=True, help="API key for openAI")
-    parser.add_argument("--api_key_palm", required=True, help="API key for PaLM")
-    parser.add_argument("--claim_number", default=1, help="The claim number in dataset")
-    parser.add_argument("--persuader_instruction", default='persuader_claim_reason_instruction',
-                        help="Instruction for persuader")
-    parser.add_argument("--debater_instruction", default='debater_claim_reason_instruction',
-                        help="Instruction for debater")
-    parser.add_argument("--helper_prompt_instruction", default='No_Helper', help="Instruction for Helper")
-    parser.add_argument("--data_path", default='./claims/all-claim-not-claim.csv', help="Path to the source data")
-    parser.add_argument("--log_html_path", default='./debates/', help="Path to save the debates")
-
+# --- Argument Parsing --- 
+def define_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run AI Debates with Reworked Architecture")
+    parser.add_argument("--config_run_name", default="Default_NoHelper", 
+                        help="Name of the agent configuration section in settings.yaml to use.")
+    parser.add_argument("--claim_index", type=int, default=None, 
+                        help="Index of the specific claim in the dataset to run (0-based). Runs all if not specified.")
+    parser.add_argument("--settings_path", default="./config/settings.yaml", 
+                        help="Path to the main settings configuration file.")
+    parser.add_argument("--models_path", default="./config/models.yaml", 
+                        help="Path to the LLM models configuration file.")
     args = parser.parse_args()
-
-    args.moderator_terminator_instruction_palm = 'moderator_terminator_instruction'
-    args.moderator_tag_checker_instruction_palm = 'moderator_TagChecker_instruction'
-    args.moderator_topic_checker_instruction_palm = 'moderator_topic_instruction'
-    args.moderator_terminator_instruction_gpt = 'moderator_terminator_instruction'
-    args.moderator_tag_checker_instruction_gpt = 'moderator_TagChecker_instruction'
-    args.moderator_topic_checker_instruction_gpt = 'moderator_topic_instruction'
-    args.memory_instruction = 'summary_instruction'
-
     return args
 
+# --- Main Execution Logic --- 
+def main():
+    # --- Central Logging Configuration ---
+    logging.basicConfig(
+        level=logging.INFO, # Change from INFO to DEBUG if debug is needed
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    # --- Suppress noisy logs from underlying libraries ---
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("google.api_core").setLevel(logging.WARNING)
+    # --------------------------------
+    logger.info("Application starting...")
+    # -----------------------------------
 
-def run(persuader_agent, debater_agent, moderator_agent_1, moderator_agent_2, moderator_agent_3, moderator_agent_4,
-        moderator_agent_5, args, topic_id, chat_id, claim, gpt4_moderator):
-    print(arg.log_html_path)
-    human = False
-    keep_talking = True
-    round_of_conversation: int = 1
-    if gpt4_moderator:
-        print(Fore.RED + '\n ****** GPT-4_MODERATOR *******' + Style.RESET_ALL)
-    else:
-        print(Fore.GREEN + '\n ****** PaLM_MODERATOR *******' + Style.RESET_ALL)
-    print(Fore.RED + '\n ******************************* TOPIC******************' + Style.RESET_ALL)
-    print(Fore.RED + '******************************* TOPIC******************' + Style.RESET_ALL)
-    print(Fore.RED + '******************************* TOPIC******************' + Style.RESET_ALL)
-    print(persuader_agent.last_response)
+    args = define_arguments()
+    
+    # Set API Keys from file  
+    set_environment_variables_from_file(API_KEYS_PATH)
 
-    if human:
-        def handle_submit(user_input, window):
-            debater_response_to_human = debater_agent.call(user_input)
-            window.chat_view.insert(tk.END, "You: {}\n".format(user_input))
-            window.chat_view.insert(tk.END, "\n")
-            window.chat_view.insert(tk.END, "-" * 30 + "\n", "line")
-            window.chat_view.insert(tk.END, "Debater: {}\n".format(debater_response_to_human))
-            window.chat_view.insert(tk.END, "\n")
-            window.chat_view.see(tk.END)
+    try:
+        # Load Configs
+        config = load_app_config(args.settings_path, args.models_path)
+        debate_settings = config['settings']['debate_settings']
+        run_config_name = args.config_run_name or "Default_NoHelper"
+        logger.info(f"Using agent run configuration: {run_config_name}")
+        agent_configs_for_run = config['settings']['agent_configurations'].get(run_config_name)
+        if not agent_configs_for_run:
+            logger.error(f"Run configuration '{run_config_name}' not found in settings.")
+            sys.exit(1)
+        helper_type_name = agent_configs_for_run.get('helper_type_name', run_config_name)
 
-            if not window.is_running:
-                window.window.destroy()
+        # Load dataset
+        data_path = debate_settings['data_path']
+        logger.info(f"Loading data from: {data_path}")
+        
+        # Check if the configured path exists directly
+        if not os.path.exists(data_path):
+             # If not, try resolving it relative to the project root (assuming main.py is in the root)
+             project_root = os.path.dirname(os.path.abspath(__file__))
+             alt_path_from_root = os.path.join(project_root, data_path.lstrip('./')) 
+             logger.info(f"Configured data path '{data_path}' not found. Trying relative to project root: '{alt_path_from_root}'")
+             if os.path.exists(alt_path_from_root):
+                  data_path = alt_path_from_root
+                  logger.info(f"Using alternative data path: {data_path}")
+             else:
+                  # Use f-string for clarity
+                  logger.error(f"Data file not found at specified path '{debate_settings['data_path']}' or relative to project root '{alt_path_from_root}'")
+                  sys.exit(1)
+        
+        # Proceed with loading now data_path is confirmed
+        data = pd.read_csv(data_path)
+        logger.info(f"Loaded {len(data)} claims.")
 
-        chat_window = ChatWindow(on_submit=handle_submit)
-        chat_window.insert(tk.END, "You: {}\n".format('test'))
-        chat_window.see(tk.END)
-    else:
-
-        while keep_talking:
-            finish_reason = None
-            result = None
-
-            r"""debater"""
-            print(Fore.MAGENTA + 'round_of_conversation:' + str(round_of_conversation) + Style.RESET_ALL)
-            print(Fore.GREEN + "\033[3m ********Agent2*************.\033[0m " + Style.RESET_ALL)
-            print(Fore.GREEN + "********Debater*************" + Style.RESET_ALL)
-            debater_response = debater_agent.call(persuader_agent.last_response)
-            print(debater_response)
-
-            r"""persuader"""
-            print(Fore.BLUE + "\033[3m ********Agent1*************.\033[0m " + Style.RESET_ALL)
-            print(Fore.BLUE + "********Persuader*************" + Style.RESET_ALL)
-            if persuader_agent.helper_feedback_switch:
-                persuader_response, fallacy, fallacious_argument = persuader_agent.call(debater_agent.last_response)
+        # Determine claims to run
+        claim_indices_to_run = []
+        if args.claim_index is not None:
+            if 0 <= args.claim_index < len(data):
+                claim_indices_to_run = [args.claim_index]
             else:
-                persuader_response, fallacy = persuader_agent.call(debater_agent.last_response)
-                fallacious_argument = None
-            print(persuader_response)
-
-            r'''**********Moderator*********'''
-            print(Fore.RED + "******** MODERATOR *************" + Style.RESET_ALL)
-            # This is used for topics that PaLM sends None.
-            if gpt4_moderator:
-                print(Fore.RED + '\n ****** GPT-4_MODERATOR *******' + Style.RESET_ALL)
-                # GPT 4 Moderator
-                moderator_command_4 = moderator_agent_4.call(persuader_agent.memory.chat_memory.log[0].inputs)
-                # GPT 3 MODERATOR
-                # moderator_command_5 = moderator_agent_5.call(persuader_agent.memory.chat_memory.log[0].inputs)
-                print(moderator_command_4.info.value)
-                if moderator_command_4.result:
-                    result = True
-                else:
-                    result = False
-                if moderator_command_4.terminate:
-                    finish_reason = str(moderator_command_4.info.value)
-                    break
-                time.sleep(40)
-            else:
-
-                moderator_command_1 = moderator_agent_1.call(persuader_agent.memory.chat_memory.log[0].inputs)
-
-                if moderator_command_1 == None:
-                    print(
-                        Fore.RED + '\n ****** Replacing PaLM moderator with GPT-4_MODERATOR *******' + Style.RESET_ALL)
-                    moderator_command_4 = moderator_agent_4.call(persuader_agent.memory.chat_memory.log[0].inputs)
-                    # GPT 3 MODERATOR
-                    #  moderator_command_5 = moderator_agent_5.call(persuader_agent.memory.chat_memory.log[0].inputs)
-                    print(moderator_command_4.info.value)
-                    if moderator_command_4.result:
-                        result = True
-                    else:
-                        result = False
-                    if moderator_command_4.terminate:
-                        finish_reason = str(moderator_command_4.info.value)
-                        break
-
-                    time.sleep(35)
-                    gpt4_moderator = True
-                    continue
-                moderator_command_2 = moderator_agent_2.call(persuader_agent.memory.chat_memory.log[0].inputs)
-                moderator_command_3 = moderator_agent_3.call(persuader_agent.memory.chat_memory.log[0].inputs)
-
-                print(moderator_command_1.info.value)
-                print(moderator_command_2.info.value)
-                print(moderator_command_3.info.value)
-
-                if moderator_command_1.result and moderator_command_2.result and moderator_command_3.result:
-                    result = True
-                else:
-                    result = False
-
-                if moderator_command_1.terminate and moderator_command_2.terminate and moderator_command_3.terminate:
-                    finish_reason = str(moderator_command_1.info.value)
-                    break
-
-            round_of_conversation += 1
-            if int(round_of_conversation) > 12:
-                print("safety stop")
-                break
-
-            time.sleep(1)
-
-    print(Fore.RED + "******** Conversation Result *************" + Style.RESET_ALL)
-    print(result)
-
-    r"""Number of token used """
-    print("persuader used token: ", int(persuader_agent.model_backbone.token_used)
-          + int(persuader_agent.model_backbone_helper.token_used) +
-          int(persuader_agent.memory.model_backbone.token_used))
-    print("Debater used token: ", int(debater_agent.model_backbone.token_used)
-          +
-          int(debater_agent.memory.model_backbone.token_used)
-          )
-    print("Number of token used for this conversation: ",
-          int(debater_agent.model_backbone.token_used)
-          + int(persuader_agent.model_backbone.token_used) +
-          int(persuader_agent.model_backbone_helper.token_used) +
-          int(debater_agent.memory.model_backbone.token_used) +
-          int(persuader_agent.memory.model_backbone.token_used)
-          )
-    if gpt4_moderator:
-        print("Number of token each moderator used", moderator_agent_4.model_backbone.token_used)
-    else:
-        print("Number of token each moderator used", moderator_agent_1.model_backbone.token_used)
-
-    r"""Save the log"""
-    save_log(memory_log=persuader_agent.memory,
-             memory_log_path=args.log_html_path,
-             topic_id=topic_id,
-             chat_id=chat_id,
-             result=result,
-             helper=args.helper_prompt_instruction,
-             number_of_rounds=round_of_conversation,
-             claim=claim,
-             finish_reason=finish_reason,
-
-             )
-
-
-def main(arg):
-    data = pd.read_csv(arg.data_path)
-
-    r''' iterate through dataset and starts conversations'''
-
-    for i in tqdm([int(arg.claim_number)]):
-
-        r''' Initialize the Moderator Agent'''
-
-        moderator_agent_1 = ModeratorAgent(model=ModelType.GEMINI_1_5_FLASH_8B,
-                                           prompt_instruction_path_moderator_terminator='prompts/moderator/%s.txt' % arg.moderator_terminator_instruction_palm,
-                                           prompt_instruction_path_moderator_tag_checker='prompts/moderator/%s.txt' % arg.moderator_tag_checker_instruction_palm,
-                                           prompt_instruction_path_moderator_topic_checker='prompts/moderator/%s.txt' % arg.moderator_topic_checker_instruction_palm,
-                                           variables=get_variables(data.loc[i], AgentType.DEBATER_AGENT)
-                                           )
-        moderator_agent_2 = ModeratorAgent(model=ModelType.GEMINI_1_5_FLASH_8B,
-                                           prompt_instruction_path_moderator_terminator='prompts/moderator/%s.txt' % arg.moderator_terminator_instruction_palm,
-                                           prompt_instruction_path_moderator_tag_checker='prompts/moderator/%s.txt' % arg.moderator_tag_checker_instruction_palm,
-                                           prompt_instruction_path_moderator_topic_checker='prompts/moderator/%s.txt' % arg.moderator_topic_checker_instruction_palm,
-                                           variables=get_variables(data.loc[i], AgentType.DEBATER_AGENT))
-
-        moderator_agent_3 = ModeratorAgent(model=ModelType.GEMINI_1_5_FLASH_8B,
-                                           prompt_instruction_path_moderator_terminator='prompts/moderator/%s.txt' % arg.moderator_terminator_instruction_palm,
-                                           prompt_instruction_path_moderator_tag_checker='prompts/moderator/%s.txt' % arg.moderator_tag_checker_instruction_palm,
-                                           prompt_instruction_path_moderator_topic_checker='prompts/moderator/%s.txt' % arg.moderator_topic_checker_instruction_palm,
-                                           variables=get_variables(data.loc[i], AgentType.DEBATER_AGENT))
-        moderator_agent_4 = ModeratorAgent(model=ModelType.GPT_4_TURBO_0613,
-                                           prompt_instruction_path_moderator_terminator='prompts/moderator/%s.txt' % arg.moderator_terminator_instruction_gpt,
-                                           prompt_instruction_path_moderator_tag_checker='prompts/moderator/%s.txt' % arg.moderator_tag_checker_instruction_gpt,
-                                           prompt_instruction_path_moderator_topic_checker='prompts/moderator/%s.txt' % arg.moderator_topic_checker_instruction_gpt,
-                                           variables=get_variables(data.loc[i], AgentType.DEBATER_AGENT
-                                                                   ))
-        moderator_agent_5 = ModeratorAgent(model=ModelType.GPT_3_5_TURBO_0125,
-                                           prompt_instruction_path_moderator_terminator='prompts/moderator/%s.txt' % arg.moderator_terminator_instruction_gpt,
-                                           prompt_instruction_path_moderator_tag_checker='prompts/moderator/%s.txt' % arg.moderator_tag_checker_instruction_gpt,
-                                           prompt_instruction_path_moderator_topic_checker='prompts/moderator/%s.txt' % arg.moderator_topic_checker_instruction_gpt,
-                                           variables=get_variables(data.loc[i], AgentType.DEBATER_AGENT
-                                                                   ))
-
-        r''' Initialize the Persuader Agent Model Config'''
-        persuader_agent_model_config = ChatGPTConfig(temperature=1.0,
-                                                     presence_penalty=0.0,
-                                                     frequency_penalty=0.0
-                                                     )
-        if arg.helper_prompt_instruction != 'No_Helper':
-            helper_feedback_switch=True
+                logger.error(f"Error: Invalid claim_index {args.claim_index}. Must be between 0 and {len(data)-1}.")
+                sys.exit(1)
         else:
-            helper_feedback_switch=False
+            claim_indices_to_run = list(range(len(data)))
+            logger.info(f"Running for all {len(claim_indices_to_run)} claims.")
 
+        # Load Initial Prompt Template
+        initial_prompt_path = debate_settings.get('initial_prompt_path')
+        if not initial_prompt_path: raise ValueError("initial_prompt_path missing in debate_settings.")
+        try:
+            with open(initial_prompt_path, 'r', encoding='utf-8') as f:
+                initial_prompt_template_content = f.read()
+            logger.info(f"Loaded initial prompt template from: {initial_prompt_path}")
+        except FileNotFoundError:
+             logger.critical(f"Initial prompt template file not found: {initial_prompt_path}. Exiting."); sys.exit(1)
+        except Exception as e:
+             logger.critical(f"Error reading initial prompt template {initial_prompt_path}: {e}", exc_info=True); sys.exit(1)
 
-        r''' Initialize the Persuader Agent'''
-        persuader_agent = PersuaderAgent(
-            model=ModelType.GPT_3_5_TURBO_0125,
-            model_helper=ModelType.GPT_3_5_TURBO_0125,
-            model_config=persuader_agent_model_config,
-            helper_prompt_instruction_path='prompts/helper/%s.txt' % arg.helper_prompt_instruction,
-            prompt_instruction_path='prompts/persuader/%s.txt' % arg.persuader_instruction,
-            variables=get_variables(data.loc[i], AgentType.PERSUADER_AGENT),
-            memory_prompt_instruction_path='prompts/summary/%s.txt' % arg.memory_instruction,
-            helper_feedback=helper_feedback_switch)
+        # --- Run Debates Loop --- 
+        results_summary = []
+        topic_id_col = debate_settings.get('topic_id_column', 'id')
+        claim_col = debate_settings.get('claim_column', 'claim')
 
-        if arg.helper_prompt_instruction != 'No_Helper':
-            if not persuader_agent.helper_feedback_switch:
-                print('check the setting1')
-                break
-        else:
-            if persuader_agent.helper_feedback_switch:
-                print('check the setting2')
-                break
+        for index, claim_data in tqdm(data.iloc[claim_indices_to_run].iterrows(), total=len(claim_indices_to_run), desc="Running Debates"):
+            topic_id = str(claim_data.get(topic_id_col, index))
+            claim_text = str(claim_data.get(claim_col, ''))
+            if not claim_text: logger.warning(f"Skipping {topic_id} (Index {index}): empty claim."); continue
 
-        r''' Initialize the Debater Agent Model Config'''
+            logger.info(f"\n===== Preparing Claim Index: {index}, Topic ID: {topic_id} ====")
+            run_result = {}
+            try:
+                # Instantiate setup class for this claim
+                setup = DebateInstanceSetup(
+                    agents_configuration=agent_configs_for_run,
+                    debate_settings=debate_settings,
+                    initial_prompt_template=initial_prompt_template_content, 
+                    claim_data=claim_data
+                    # Removed resolved_llm_providers/summarizer args
+                )
 
-        debater_agent_model_config_gpt = ChatGPTConfig(temperature=1.0,
-                                                       presence_penalty=0.0,
-                                                       frequency_penalty=0.0
-                                                       )
+                # Instantiate orchestrator 
+                orchestrator = DebateOrchestrator(
+                    persuader=setup.persuader, 
+                    debater=setup.debater,
+                    moderator_terminator=setup.moderator_terminator,
+                    moderator_topic_checker=setup.moderator_topic_checker,
+                    max_rounds=int(debate_settings.get('max_rounds', 12)),
+                    turn_delay_seconds=float(debate_settings.get('turn_delay_seconds', 0.0)),
+                    logger_instance=logger
+                )
+                
+                # Run debate
+                run_result = orchestrator.run_debate(
+                    topic_id=topic_id, claim=claim_text,
+                    log_config=debate_settings, 
+                    helper_type_name=helper_type_name
+                )
+                run_result['status'] = 'Success'
 
-        r''' Initialize the Debater Agent'''
-        debater_agent = DebaterAgent(
-            model=ModelType.GPT_3_5_TURBO_0125,
-            model_config=debater_agent_model_config_gpt,
-            prompt_instruction_path='prompts/debater/%s.txt' % arg.debater_instruction,
-            variables=get_variables(data.loc[i], AgentType.DEBATER_AGENT),
-            memory_prompt_instruction_path='prompts/summary/%s.txt' % arg.memory_instruction,
-        )
-        chat_id = uuid.uuid1()
-        run(persuader_agent, debater_agent, moderator_agent_1, moderator_agent_2, moderator_agent_3, moderator_agent_4,
-            moderator_agent_5, arg, str(data.loc[i]['id'], ),
-            str(chat_id), str(data.loc[i]['claim']), False)
+            except Exception as e:
+                # Handle setup or runtime errors 
+                logger.error(f"!!!!! Error running debate for Topic ID {topic_id} (Index {index}): {e} !!!!!", exc_info=True)
+                run_result = {
+                    "topic_id": topic_id,
+                    "claim_index": index,
+                    "status": "ERROR",
+                    "error_message": str(e)
+                }
+            results_summary.append(run_result)
 
-        time.sleep(1)
+        # --- Print Summary --- 
+        logger.info("\n===== Debate Run Summary ====")
+        successful_runs = [r for r in results_summary if r.get('status') == 'Success']
+        failed_runs = [r for r in results_summary if r.get('status') == 'ERROR']
+        logger.info(f"Total Debates Run: {len(results_summary)}")
+        logger.info(f"Successful: {len(successful_runs)}")
+        logger.info(f"Failed: {len(failed_runs)}")
+        if failed_runs:
+             logger.warning("\nFailed Runs:")
+             for fail in failed_runs:
+                  logger.warning(f"  Index: {fail.get('claim_index','N/A')}, Topic: {fail.get('topic_id','N/A')}, Error: {fail.get('error_message','Unknown')}")
 
+    except Exception as e:
+        logger.critical(f"\nAn unexpected error occurred in main execution: {e}", exc_info=True)
+        sys.exit(1)
 
 if __name__ == '__main__':
-    arg = define_arguments()
-    # Using environment variable for Google API key instead of command-line argument
-    genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
-    main(arg)
+    main() 

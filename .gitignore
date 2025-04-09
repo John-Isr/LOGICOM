@@ -31,5 +31,6 @@ API_keys
 *.key
 
 # Log files and outputs
+logs/
 *.log
 debates/

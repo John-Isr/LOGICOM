@@ -1,0 +1,122 @@
+# LLM Configurations Catalogue
+# Defines available LLM providers and specific model setups.
+
+llm_models:
+  # === OpenAI Models ===
+  gpt35_turbo:
+    provider: openai
+    model_name: gpt-3.5-turbo
+    # api_key: YOUR_KEY_HERE # Option 1: Uncomment and add key here (less secure). Option 2 (Recommended): Leave commented and set env var OPENAI_API_KEY instead.
+    default_config:
+      temperature: 0.7
+
+  gpt35_turbo_0125:
+    provider: openai
+    model_name: gpt-3.5-turbo-0125
+    # api_key:
+    default_config:
+      temperature: 0.7 
+
+  gpt4:
+    provider: openai
+    model_name: gpt-4
+    # api_key:
+    default_config:
+      temperature: 0.7
+
+  gpt4_turbo:
+    provider: openai
+    model_name: gpt-4-turbo
+    # api_key:
+    default_config:
+      temperature: 0.7
+
+  gpt4_0613:
+    provider: openai
+    model_name: gpt-4-0613
+    # api_key:
+    default_config:
+      temperature: 0.7
+
+  gpt4o:
+    provider: openai
+    model_name: gpt-4o
+    # api_key:
+    default_config:
+      temperature: 0.7
+
+  gpt4o_mini:
+    provider: openai
+    model_name: gpt-4o-mini
+    # api_key:
+    default_config:
+      temperature: 0.7
+
+  # === Google Gemini Models ===
+  gemini_15_flash_8b:
+    provider: gemini
+    model_name: gemini-1.5-flash-8b
+    # api_key:
+    default_config:
+      temperature: 0.7
+
+  gemini_15_flash:
+    provider: gemini
+    model_name: gemini-1.5-flash
+    # api_key:
+    default_config:
+      temperature: 0.7
+
+  gemini_15_pro:
+    provider: gemini
+    model_name: gemini-1.5-pro
+    # api_key:
+    default_config:
+      temperature: 0.7
+
+  gemini_20_flash: 
+    provider: gemini
+    model_name: gemini-2.0-flash
+    # api_key:
+    default_config:
+      temperature: 0.7
+
+  gemini_20_flash_lite: 
+    provider: gemini
+    model_name: gemini-2.0-flash-lite
+    # api_key:
+    default_config:
+      temperature: 0.7
+
+  gemini_20_pro: 
+    provider: gemini
+    model_name: gemini-2.0-pro
+    # api_key:
+    default_config:
+      temperature: 0.7
+
+  # === Local LLM Templates ===
+  ollama_deepseek:
+    provider: local
+    local_type: ollama
+    model_name: deepseek-coder # Example: Replace with correct model tag
+    api_base_url: http://localhost:11434
+    default_config:
+      temperature: 0.6
+
+  ollama_llama:
+    provider: local
+    local_type: ollama
+    model_name: llama3 # Example: Replace with llama2, llama3:70b etc.
+    api_base_url: http://localhost:11434
+    default_config:
+      temperature: 0.6
+
+  generic_local_api:
+    provider: local
+    local_type: generic
+    model_name: local-model # Name might be handled by the server
+    api_base_url: http://localhost:8000/v1 # Example endpoint - CHANGE THIS
+    # api_key:
+    default_config:
+      temperature: 0.6 

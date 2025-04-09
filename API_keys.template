@@ -1,0 +1,10 @@
+# Template for API Keys
+# Replace YOUR_KEY_HERE with your actual API keys.
+# Remove the # from the beginning of the lines you want to use.
+
+OpenAI_API_key: YOUR_KEY_HERE
+Google_API_key: YOUR_KEY_HERE
+
+# You can add other keys here if needed by other services.
+# Make sure the prefix (e.g., "OpenAI_API_key:") exactly matches
+# what the `set_api_keys.py` script expects, including the colon. 
