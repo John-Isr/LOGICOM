@@ -1,7 +1,7 @@
 import time
 import uuid
 import re # For parsing moderator responses
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 import logging
 import os
 import json 
@@ -22,14 +22,6 @@ logger = logging.getLogger(__name__)
 
 class DebateOrchestrator:
     """Orchestrates the debate, managing agent turns and moderation checks."""
-
-    # Define constants used for parsing moderator agent outputs
-    TERMINATE_TAG = r"<terminate>" # Check for lowercase tag
-    KEEP_TALKING_TAG = r"<keep-talking>"
-    ON_TOPIC_TAG = r"<on-topic>"
-    OFF_TOPIC_TAG = r"<off-topic>"
-    SIGNAL_CHECK_POSITIVE_STR = "true"
-    SIGNAL_CHECK_NEGATIVE_STR = "false"
 
     # Define colors (assuming Persuader=BLUE, Debater=GREEN)
     PERSUADER_COLOR = Fore.BLUE
@@ -60,11 +52,15 @@ class DebateOrchestrator:
         self.logger = logger_instance or logging.getLogger(__name__)
         self.log_handlers = {} # Dict to store loggers for different formats
 
-    def _get_recent_history(self, memory: MemoryInterface, count=6) -> List[Dict[str, str]]:
-        """Helper to get recent user/assistant turns from memory."""
-        # Assuming get_history_as_prompt returns only user/assistant turns now
+    def _get_recent_history(self, memory: MemoryInterface, count=None) -> List[Dict[str, str]]:
+        """Helper to get conversation history from memory.
+        If count is specified, returns only that many recent messages.
+        If count is None, returns full history.
+        """
         full_history = memory.get_history_as_prompt()
-        return full_history[-count:]
+        if count is not None:
+            return full_history[-count:]
+        return full_history
 
     def _get_last_opponent_message_content(self, memory: MemoryInterface) -> Optional[str]:
          """Gets the content of the last message assumed to be from the opponent (user role)."""
@@ -74,221 +70,214 @@ class DebateOrchestrator:
          # Fallback or error if last message wasn't user? Could indicate issue.
          logger.warning("Could not reliably determine last opponent message for moderator tag check.")
          return None 
-
+    
+# The main loop of the debate
     def run_debate(self, topic_id: str, claim: str, log_config: Dict[str, Any], helper_type_name: str) -> Dict[str, Any]:
         """
         Runs a single debate for the given topic.
 
         Args:
-            topic_id: Identifier for the topic being debated.
-            claim: The text of the claim.
+            topic_id
+            claim
             log_config: Dictionary with logging parameters ('log_base_path', 'log_formats', etc.).
-            helper_type_name: Name identifying this run configuration (for logging).
-
-        Returns:
-            A dictionary containing the debate results (result, rounds, finish_reason, chat_id).
+            helper_type_name: Name identifying (for logging).
         """
-        # Reset agents for a new debate
+        # Initialize debate
+        chat_id = self._initialize_debate(topic_id, helper_type_name)
+        
+        # Initialize state
+        keep_talking = True
+        round_number = 0
+        final_result_status = None  # Will be set based on actual outcome
+        finish_reason = None  # Will be set based on actual outcome
+        current_persuader_response = ""
+        debater_response = ""
+        has_debater_responded = False
+
+        # --- Main Debate Loop --- 
+        while keep_talking and round_number < self.max_rounds:
+            round_number += 1
+            print(f"{self.ROUND_COLOR}\n--- Round {round_number} ---{self.RESET_ALL}")
+
+            # Run Persuader's turn
+            success, current_persuader_response = self._run_persuader_turn(round_number, debater_response)
+            if not success: #terminate if error
+                keep_talking = False
+                final_result_status = "Error"
+                finish_reason = f"Error in Persuader agent"
+                break
+
+            # Run Debater's turn
+            success, debater_response = self._run_debater_turn(current_persuader_response)
+            if not success:
+                keep_talking = False
+                final_result_status = "Error"
+                finish_reason = f"Error in Debater agent"
+                break
+            has_debater_responded = True
+
+            # Run Moderation checks only after debater has responded at least once
+            if has_debater_responded:
+                keep_talking, final_result_status, finish_reason = self._run_moderation_checks(
+                    persuader_memory=self.persuader.memory,
+                    debater_memory=self.debater.memory
+                )
+
+        # Handle max rounds reached
+        if keep_talking and round_number >= self.max_rounds:
+            final_result_status = "Persuader Fail (Max Rounds)"
+            finish_reason = "Max rounds reached"
+            logger.info(f"Debate ended: Reached max rounds ({self.max_rounds}).")
+
+        # Return results
+        return self._finalize_debate(
+            topic_id=topic_id,
+            chat_id=chat_id,
+            claim=claim,
+            round_number=round_number,
+            final_result_status=final_result_status,
+            finish_reason=finish_reason,
+            log_config=log_config,
+            helper_type_name=helper_type_name
+        )
+
+    def _initialize_debate(self, topic_id: str, helper_type_name: str) -> str:
+        """Initialize a new debate session."""
+        # Reset all agents
         self.persuader.reset()
         self.debater.reset()
         self.moderator_terminator.reset()
         self.moderator_topic.reset()
 
-        chat_id = str(uuid.uuid4()) # Generate unique ID for this debate instance
+        # Generate unique ID
+        chat_id = str(uuid.uuid4())
+        
+        # Log initial setup
         logger.info(f"\n--- Starting Debate --- Topic: {topic_id}, Chat ID: {chat_id} ---")
         logger.info(f"Config: {helper_type_name}")
         logger.info(f"Persuader: {self.persuader.agent_name}, LLM: {self.persuader.llm_client.__class__.__name__}")
         logger.info(f"Debater: {self.debater.agent_name}, LLM: {self.debater.llm_client.__class__.__name__}")
-        logger.info(f"Moderator (Terminator): {self.moderator_terminator.agent_name}, LLM: {self.moderator_terminator.llm_client.__class__.__name__}")
-        logger.info(f"Moderator (Topic): {self.moderator_topic.agent_name}, LLM: {self.moderator_topic.llm_client.__class__.__name__}")
-
-        keep_talking = True
-        round_of_conversation: int = 0
-        final_result_status: str = "Max Rounds Reached" # Default status
-        finish_reason: str = "Max rounds reached" # Default if loop finishes normally
+        logger.info(f"Moderator (Terminator): {self.moderator_terminator.agent_name}")
+        logger.info(f"Moderator (Topic): {self.moderator_topic.agent_name}")
         logger.info(f"Max rounds limit set to: {self.max_rounds}")
 
-        # Initialize variables for the loop
-        current_persuader_response = "" 
-        debater_response = "" # Initialize debater response
+        return chat_id
 
-        # --- Main Debate Loop --- 
-        while keep_talking and round_of_conversation < self.max_rounds:
-            # Increment round at the start of the loop pair
-            round_of_conversation += 1 
-            print(f"{self.ROUND_COLOR}\n--- Round {round_of_conversation} ---{self.RESET_ALL}")
-
-            # === Persuader's Turn (Now goes first in the loop) ===
-            # Optional delay between full rounds (after first round)
-            if self.turn_delay_seconds > 0 and round_of_conversation > 1: 
-                 time.sleep(self.turn_delay_seconds)
-            try:
-                print(f"{self.PERSUADER_COLOR}Persuader responding...{self.RESET_ALL}")
-                # If Round 1, opponent_message is None, Persuader generates initial ask.
-                # Otherwise, it gets the debater_response from the *end* of the previous iteration.
-                opponent_message_for_persuader = debater_response if round_of_conversation > 1 else None
-                
-                # Expecting only response_string now
-                persuader_response = self.persuader.call(opponent_message_for_persuader)
-                
-                # Metadata is no longer returned, remove extraction logic
-                # initial_response = persuader_metadata.get("original_response", "") 
-                # feedback_tag = persuader_metadata.get("feedback_tag") 
-                
-                print(f"{self.PERSUADER_COLOR}Persuader: {persuader_response}{self.RESET_ALL}")
-
-                # Remove immediate logging based on returned metadata
-                # The necessary info (original response, tag) is still in the memory log saved at the end.
-                # if feedback_tag: 
-                #     refinement_type = "Fallacy" if feedback_tag else "Unknown Refinement"
-                #     print(f"{self.MODERATOR_COLOR}  (Helper Feedback: {refinement_type} - {feedback_tag}){self.RESET_ALL}")
-                #     if refinement_type == "Fallacy":
-                #         fallacy_log_path = os.path.join(log_config.get('log_base_path', './logs'), "fallacies.csv")
-                #         save_fallacy_data(...)
-                
-                current_persuader_response = persuader_response # Store for next debater turn
-            except Exception as e:
-                logger.error(f"Error during Persuader call: {e}", exc_info=True)
-                print(f"{self.ERROR_COLOR}Error during Persuader call: {e}{self.RESET_ALL}")
-                finish_reason = f"Error in Persuader agent: {e}"
-                final_result_status = "Error"
-                keep_talking = False
-                break # Exit loop on agent error
-
-            # === Debater's Turn ===
-            # Optional delay between turns within a round
-            if self.turn_delay_seconds > 0: 
+    def _run_persuader_turn(self, round_number: int, previous_debater_response: str) -> Tuple[bool, str]:
+        """Run the persuader's turn in the debate."""
+        try:
+            # Add delay between rounds if configured
+            if self.turn_delay_seconds > 0 and round_number > 1:
                 time.sleep(self.turn_delay_seconds)
-            try:
-                print(f"{self.DEBATER_COLOR}Debater responding...{self.RESET_ALL}")
-                # Debater always receives the Persuader's last response (which is initial ask in Round 1)
-                message_to_debater = current_persuader_response 
-                debater_response = self.debater.call(message_to_debater)
-                print(f"{self.DEBATER_COLOR}Debater: {debater_response}{self.RESET_ALL}")
-            except Exception as e:
-                logger.error(f"Error during Debater call: {e}", exc_info=True)
-                print(f"{self.ERROR_COLOR}Error during Debater call: {e}{self.RESET_ALL}")
-                finish_reason = f"Error in Debater agent: {e}"
-                final_result_status = "Error"
-                keep_talking = False
-                break # Exit loop on agent error
 
-            # === Moderator's Turn (Multiple Checks) ===
-            moderator_logs = [] # Initialize log list for this round
-            # Get necessary context (e.g., from debater memory)
-            if not self.debater.memory:
-                 logger.error("Debater memory not found, cannot perform moderation checks.")
-                 finish_reason = "Internal Error: Debater memory missing"
-                 final_result_status = "Error"
-                 keep_talking = False
-                 break
-            recent_history = self._get_recent_history(self.debater.memory) # Use helper
-
-            # Initialize checks - will be updated by try blocks or stay None if error
-            termination_state: Optional[str] = None
-            is_on_topic: Optional[bool] = None
-
-            # --- Termination Check ---
-            try:
-                print(f"{self.MODERATOR_COLOR}Moderator ({self.moderator_terminator.agent_name}) checking termination...{self.RESET_ALL}")
-                termination_result_raw = self.moderator_terminator.call(recent_history) 
-                moderator_logs.append({
-                    "moderator_name": self.moderator_terminator.agent_name,
-                    "raw_response": termination_result_raw 
-                })
-                # Parse termination result - EXPECTING "CONVINCED", "CONTINUE", "TERMINATE_OTHER" 
-                termination_state = self._parse_moderator_termination(termination_result_raw)
-            except Exception as e:
-                logger.error(f"Error in {self.moderator_terminator.agent_name} or parsing: {e}", exc_info=True)
-                finish_reason = f"Moderator Error ({self.moderator_terminator.agent_name}): {e}"
-                final_result_status = "Error"
-                keep_talking = False
-                break 
+            print(f"{self.PERSUADER_COLOR}Persuader responding...{self.RESET_ALL}")
             
-            # --- Topic Check ---
-            # If keep_talking is already false, skip subsequent checks
-            if keep_talking:
-                try:
-                    print(f"{self.MODERATOR_COLOR}Moderator ({self.moderator_topic.agent_name}) checking topic...{self.RESET_ALL}")
-                    topic_result_raw = self.moderator_topic.call(recent_history)
-                    moderator_logs.append({
-                        "moderator_name": self.moderator_topic.agent_name,
-                        "raw_response": topic_result_raw
-                    })
-                    is_on_topic = self._parse_moderator_on_topic(topic_result_raw)
-                except Exception as e:
-                    logger.error(f"Error in {self.moderator_topic.agent_name} or parsing: {e}", exc_info=True)
-                    finish_reason = f"Moderator Error ({self.moderator_topic.agent_name}): {e}"
-                    final_result_status = "Error"
-                    keep_talking = False
-                    # No break needed here, will be caught by outer check
-
-            # --- Log Moderator Interactions --- 
-            # Log even if errors occurred
-            if self.persuader.memory: 
-                 self.persuader.memory.log.append({"type": "moderator_check", "data": moderator_logs})
-            if self.debater.memory:
-                 self.debater.memory.log.append({"type": "moderator_check", "data": moderator_logs})
+            # First round has no opponent message
+            opponent_message = previous_debater_response if round_number > 1 else None
+            persuader_response = self.persuader.call(opponent_message)
             
-            # If any moderator check failed and set keep_talking to False, exit now
-            if not keep_talking: 
-                 break
-                 
-            # --- Process Moderator Decisions --- 
-            # This block is only reached if all moderator checks succeeded without exception
+            print(f"{self.PERSUADER_COLOR}Persuader: {persuader_response}{self.RESET_ALL}")
+            return True, persuader_response
+
+        except Exception as e:
+            logger.error(f"Error during Persuader call: {e}", exc_info=True)
+            print(f"{self.ERROR_COLOR}Error during Persuader call: {e}{self.RESET_ALL}")
+            return False, ""
+
+    def _run_debater_turn(self, persuader_message: str) -> Tuple[bool, str]:
+        """Run the debater's turn in the debate."""
+        try:
+            # Add delay between turns if configured
+            if self.turn_delay_seconds > 0:
+                time.sleep(self.turn_delay_seconds)
+
+            print(f"{self.DEBATER_COLOR}Debater responding...{self.RESET_ALL}")
+            debater_response = self.debater.call(persuader_message)
+            print(f"{self.DEBATER_COLOR}Debater: {debater_response}{self.RESET_ALL}")
             
-            # Decision 1: Check Termination State
-            if termination_state == "CONVINCED":
-                print(f"{self.MODERATOR_COLOR}Moderator Termination Check: CONVINCED.{self.RESET_ALL}")
-                finish_reason = "Debater convinced"
-                final_result_status = "Persuader Win"
-                keep_talking = False
-            elif termination_state == "TERMINATE_OTHER":
-                print(f"{self.MODERATOR_COLOR}Moderator Termination Check: Early termination signal detected.{self.RESET_ALL}")
-                # Use the reason provided by the moderator if possible, otherwise generic
-                finish_reason = f"Moderator terminated: {termination_result_raw[:100]}" # Log part of raw response as reason
-                final_result_status = "Inconclusive (Terminated)" 
-                keep_talking = False
-            else: # Assume CONTINUE or unexpected value
-                if termination_state != "CONTINUE":
-                     logger.warning(f"Unexpected termination state '{termination_state}', assuming CONTINUE.")
-                print(f"{self.MODERATOR_COLOR}Moderator Termination Check: Continue debate.{self.RESET_ALL}")
+            return True, debater_response
 
-            if not keep_talking: break 
+        except Exception as e:
+            logger.error(f"Error during Debater call: {e}", exc_info=True)
+            print(f"{self.ERROR_COLOR}Error during Debater call: {e}{self.RESET_ALL}")
+            return False, ""
 
-            # Decision 2: Check Topic tag
+    def _run_moderation_checks(self, persuader_memory: MemoryInterface, debater_memory: MemoryInterface) -> Tuple[bool, str, str]:
+        """Run all moderation checks and return updated debate state."""
+        try:
+            if not debater_memory:
+                raise ValueError("Debater memory not found")
+
+            # Get recent history for both checks (limit to last few messages)
+            recent_history = self._get_recent_history(debater_memory, count=6)  # Last few messages sufficient for both checks
+            moderator_logs = []
+
+            # Run termination check
+            keep_talking, result_status, finish_reason = self._run_termination_check(recent_history, moderator_logs)
+            if not keep_talking:
+                return keep_talking, result_status, finish_reason
+
+            # Run topic check with same recent history
+            is_on_topic = self._run_topic_check(recent_history, moderator_logs)
             if not is_on_topic:
-                print(f"{self.MODERATOR_COLOR}Moderator Topic Check: OFF Topic detected! Ending debate.{self.RESET_ALL}")
-                finish_reason = "Off-topic detected by moderator"
-                final_result_status = "Inconclusive (Off-Topic)"
-                keep_talking = False
-            else:
-                print(f"{self.MODERATOR_COLOR}Moderator Topic Check: ON Topic.{self.RESET_ALL}")
+                return False, "Inconclusive (Off-Topic)", "Off-topic detected by moderator"
+
+            # Log moderation results
+            self._log_moderation_results(persuader_memory, debater_memory, moderator_logs)
             
-            if not keep_talking: break 
-            
-            # Decision 3: Check Tag Validity (Removed)
-            # if not tags_valid:
-            #      print(f"{self.MODERATOR_COLOR}Moderator Tag Check: Invalid tags detected! Ending debate.{self.RESET_ALL}")
-            #      finish_reason = "Invalid tags detected by moderator"
-            #      final_result_status = "Inconclusive (Invalid Tags)"
-            #      keep_talking = False
-            # else:
-            #      print(f"{self.MODERATOR_COLOR}Moderator Tag Check: Tags valid.{self.RESET_ALL}")
+            return True, "", ""
 
-            if not keep_talking: break
+        except Exception as e:
+            logger.error(f"Error during moderation: {e}", exc_info=True)
+            return False, "Error", f"Moderation Error: {str(e)}"
 
-        # --- End of Debate Loop --- 
-        # Determine final status if max rounds reached
-        if keep_talking and round_of_conversation >= self.max_rounds:
-            finish_reason = "Max rounds reached"
-            final_result_status = "Persuader Fail (Max Rounds)"
-            logger.info(f"Debate ended: Reached max rounds ({self.max_rounds}).")
+    def _run_termination_check(self, history: List[Dict[str, str]], moderator_logs: List[Dict[str, Any]]) -> Tuple[bool, str, str]:
+        """Run the termination check moderation and handle the result."""
+        print(f"{self.MODERATOR_COLOR}Moderator checking termination...{self.RESET_ALL}")
+        
+        termination_result = self.moderator_terminator.call(history)
+        moderator_logs.append({
+            "moderator_name": self.moderator_terminator.agent_name,
+            "raw_response": termination_result
+        })
+        
+        # Parse the termination result
+        termination_state = self._parse_moderator_termination(termination_result)
+        
+        # Handle the termination state
+        if termination_state == "TERMINATE":
+            print(f"{self.MODERATOR_COLOR}Moderator Termination Check: TERMINATE.{self.RESET_ALL}")
+            return False, "Inconclusive (Terminated)", "Early termination by moderator"
+        else:  # KEEP-TALKING
+            print(f"{self.MODERATOR_COLOR}Moderator Termination Check: Continue debate.{self.RESET_ALL}")
+            return True, "", ""
 
-        # --- End of Debate ---
-        logger.info(f"\n--- Debate Ended --- Round: {round_of_conversation}, Status: {final_result_status}, Reason: {finish_reason} ---")
+    def _run_topic_check(self, history: List[Dict[str, str]], moderator_logs: List[Dict[str, Any]]) -> bool:
+        """Run the topic check moderation."""
+        print(f"{self.MODERATOR_COLOR}Moderator checking topic...{self.RESET_ALL}")
+        
+        topic_result = self.moderator_topic.call(history)
+        moderator_logs.append({
+            "moderator_name": self.moderator_topic.agent_name,
+            "raw_response": topic_result
+        })
+        
+        return self._parse_moderator_on_topic(topic_result)
 
-        # --- Logging ---
+    def _log_moderation_results(self, persuader_memory: MemoryInterface, debater_memory: MemoryInterface, moderator_logs: List[Dict[str, Any]]):
+        """Log the results of moderation checks."""
+        if persuader_memory:
+            persuader_memory.log.append({"type": "moderator_check", "data": moderator_logs})
+        if debater_memory:
+            debater_memory.log.append({"type": "moderator_check", "data": moderator_logs})
+
+    def _finalize_debate(self, topic_id: str, chat_id: str, claim: str, round_number: int, 
+                        final_result_status: str, finish_reason: str, log_config: Dict[str, Any], 
+                        helper_type_name: str) -> Dict[str, Any]:
+        """Finalize the debate by saving logs and preparing results."""
+        logger.info(f"\n--- Debate Ended --- Round: {round_number}, Status: {final_result_status}, Reason: {finish_reason} ---")
+
+        # Save debate logs
         log_base_path = log_config.get('log_base_path', './logs')
         log_formats = log_config.get('log_formats', ['json', 'html'])
         final_history = self.persuader.memory.get_history()
@@ -299,47 +288,52 @@ class DebateOrchestrator:
             topic_id=topic_id,
             chat_id=chat_id,
             helper_type=helper_type_name,
-            result=final_result_status, # Log the status string
-            number_of_rounds=round_of_conversation,
+            result=final_result_status,
+            number_of_rounds=round_number,
             finish_reason=finish_reason,
             claim=claim,
             save_formats=log_formats
         )
 
-        # --- Token Usage Estimate (Assuming token_used is tracked) ---
-        persuader_tokens = self.persuader.token_used if hasattr(self.persuader, 'token_used') else 0
-        debater_tokens = self.debater.token_used if hasattr(self.debater, 'token_used') else 0
-        mod_term_tokens = self.moderator_terminator.token_used if hasattr(self.moderator_terminator, 'token_used') else 0
-        mod_topic_tokens = self.moderator_topic.token_used if hasattr(self.moderator_topic, 'token_used') else 0
+        # Calculate and log token usage
+        token_usage = self._calculate_token_usage()
+        self._log_token_usage(token_usage)
 
-        # Accumulate helper tokens if used
-        helper_tokens = 0
-        if getattr(self.persuader, 'use_helper_feedback', False) and hasattr(self.persuader, 'helper_token_used'): 
-            helper_tokens = getattr(self.persuader, 'helper_token_used', 0)
-
-        moderator_tokens = mod_term_tokens + mod_topic_tokens
-        
-        # Calculate total tokens by summing all components
-        total_tokens = persuader_tokens + helper_tokens + debater_tokens + moderator_tokens
-
-        # Log individual components clearly
-        if helper_tokens > 0:
-             # Log main persuader and helper separately
-             logger.info(f"Token Estimates: Persuader(Main)={persuader_tokens}, Persuader(Helper)={helper_tokens}, Debater={debater_tokens}, Moderator(s)={moderator_tokens}, Total={total_tokens}")
-        else:
-             # Log only main persuader if helper wasn't used
-             logger.info(f"Token Estimates: Persuader={persuader_tokens}, Debater={debater_tokens}, Moderator(s)={moderator_tokens}, Total={total_tokens}")
-
-        # Return results
-        results = {
-            "result": final_result_status, # Return status string
-            "rounds": round_of_conversation,
+        return {
+            "result": final_result_status,
+            "rounds": round_number,
             "finish_reason": finish_reason,
             "chat_id": chat_id,
             "topic_id": topic_id,
-            "total_tokens_estimate": total_tokens
+            "total_tokens_estimate": sum(token_usage.values())
         }
-        return results
+
+    def _calculate_token_usage(self) -> Dict[str, int]:
+        """Calculate token usage for all components."""
+        return {
+            'persuader': self.persuader.token_used,
+            'debater': self.debater.token_used,
+            'moderator': self.moderator_terminator.token_used + self.moderator_topic.token_used,
+            'helper': self.persuader.helper_token_used if self.persuader.use_helper_feedback else 0
+        }
+
+    def _log_token_usage(self, usage: Dict[str, int]):
+        """Log token usage statistics."""
+        if usage['helper'] > 0:
+            logger.info(
+                f"Token Estimates: Persuader(Main)={usage['persuader']}, "
+                f"Persuader(Helper)={usage['helper']}, "
+                f"Debater={usage['debater']}, "
+                f"Moderator(s)={usage['moderator']}, "
+                f"Total={sum(usage.values())}"
+            )
+        else:
+            logger.info(
+                f"Token Estimates: Persuader={usage['persuader']}, "
+                f"Debater={usage['debater']}, "
+                f"Moderator(s)={usage['moderator']}, "
+                f"Total={sum(usage.values())}"
+            )
 
     def reset_orchestrator(self):
         """Resets the orchestrator to use the primary moderators."""
@@ -351,70 +345,39 @@ class DebateOrchestrator:
     # --- Moderator Response Parsing Methods --- 
 
     def _parse_moderator_termination(self, raw_response: str) -> str:
-        """Parses termination signal. Expects 'CONVINCED', 'TERMINATE_OTHER', or 'CONTINUE'."""
+        """Parses termination signal. Expects either <TERMINATE> or <KEEP-TALKING> tag."""
         if not raw_response:
-             logger.warning("Termination moderator returned empty response. Assuming CONTINUE.")
-             return "CONTINUE"
+            logger.warning("Termination moderator returned empty response. Assuming KEEP-TALKING.")
+            return "KEEP-TALKING"
         
-        response_clean = raw_response.strip().upper() # Clean and uppercase for direct comparison
-
-        if response_clean == "CONVINCED":
-            logger.info("Parser found CONVINCED signal.")
-            return "CONVINCED"
+        raw_text = raw_response.strip().upper()
         
-        if response_clean == "TERMINATE_OTHER":
-            logger.info("Parser found TERMINATE_OTHER signal.")
-            return "TERMINATE_OTHER"
-
-        # Default if no exact match found
-        if response_clean != "CONTINUE": # Log if it wasn't exactly CONTINUE either
-             logger.warning(f"Termination moderator returned unexpected response '{raw_response}'. Defaulting to CONTINUE.")
+        if '<TERMINATE>' in raw_text:
+            logger.info("Parser found TERMINATE signal.")
+            return "TERMINATE"
         
-        return "CONTINUE"
+        if '<KEEP-TALKING>' in raw_text:
+            logger.info("Parser found KEEP-TALKING signal.")
+            return "KEEP-TALKING"
+            
+        # Default if no clear signal found
+        logger.warning(f"Termination moderator returned unexpected response '{raw_response}'. Defaulting to KEEP-TALKING.")
+        return "KEEP-TALKING"
 
     def _parse_moderator_on_topic(self, raw_response: str) -> bool:
         """Parses the raw response from the topic checker moderator.
-        Expects a JSON object: {"on_topic": true/false}.
-        Raises ValueError if parsing fails.
+        Expects either <ON-TOPIC> or <OFF-TOPIC> tag.
         """
-        if not raw_response:
-             logger.error("Topic moderator returned empty response.")
-             raise ValueError("Topic moderator returned empty response.")
-
-        try:
-            # Clean potential markdown fences
-            cleaned_response = str(raw_response).strip()
-            if cleaned_response.startswith("```json"):
-                cleaned_response = cleaned_response[7:].strip()
-                if cleaned_response.endswith("```"):
-                    cleaned_response = cleaned_response[:-3].strip()
-            elif cleaned_response.startswith("```"):
-                cleaned_response = cleaned_response[3:].strip()
-                if cleaned_response.endswith("```"):
-                    cleaned_response = cleaned_response[:-3].strip()
-                    
-            topic_json = json.loads(cleaned_response)
-            if isinstance(topic_json, dict) and isinstance(topic_json.get('on_topic'), bool):
-                is_on_topic = topic_json['on_topic']
-                logger.info(f"Parsed topic check: on_topic={is_on_topic}")
-                return is_on_topic
-            else:
-                logger.error(f"Topic moderator returned invalid JSON format or missing/wrong type for 'on_topic': {raw_response}")
-                raise ValueError(f"Invalid JSON format from topic moderator: {raw_response}")
-        except json.JSONDecodeError as e:
-            logger.error(f"Topic moderator failed to parse JSON: {raw_response}. Error: {e}")
-            raise ValueError(f"Failed to parse JSON from topic moderator: {raw_response}") from e
-        except Exception as e:
-             logger.error(f"Unexpected error parsing moderator topic check: {e}", exc_info=True)
-             raise ValueError(f"Unexpected error parsing topic moderator: {raw_response}") from e
+        raw_text = raw_response.strip().upper()
+        
+        if '<ON-TOPIC>' in raw_text:
+            return True
+        if '<OFF-TOPIC>' in raw_text:
+            return False
+            
+        # Default to on-topic if no clear signal found
+        logger.warning(f"Topic check response format unclear: {raw_response}. Defaulting to on-topic.")
+        return True
 
     # --- Removed _parse_moderator_tag_check --- 
     # def _parse_moderator_tag_check(self, raw_response: str) -> bool:
-    #     ...
-
-    def reset_orchestrator(self):
-        """Resets the orchestrator to use the primary moderators."""
-        # self.active_mod_terminator = self.moderator_terminator
-        # self.active_mod_topic = self.moderator_topic
-        # self.active_mod_tag = self.moderator_tag
-        logger.info("Orchestrator reset called (currently no active state change).") 
