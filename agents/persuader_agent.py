@@ -6,6 +6,7 @@ import logging
 # Direct imports from project structure
 from agents.base_agent import BaseAgent
 from core.interfaces import LLMInterface, MemoryInterface, INTERNAL_USER_ROLE, INTERNAL_AI_ROLE
+from utils.token_utils import calculate_string_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -156,10 +157,8 @@ class PersuaderAgent(BaseAgent):
         raw_feedback = self.helper_llm_client.generate(helper_prompt_history, **self.helper_model_config)
         logger.debug(f"Raw helper response: {raw_feedback}")
 
-        # Estimate helper completion tokens
-        completion_tokens = 0
-        if isinstance(raw_feedback, str):
-            completion_tokens = len(self.tokenizer.encode(raw_feedback))
+        # Estimate helper completion tokens using token_utils
+        completion_tokens = calculate_string_tokens(raw_feedback)
 
         # Update Persuader's helper token counts 
         self.helper_prompt_tokens_used += prompt_tokens

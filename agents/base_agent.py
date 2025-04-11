@@ -1,14 +1,12 @@
 from abc import abstractmethod, ABC
 from typing import Any, Optional, Dict, List
-import tiktoken
 import logging
 
 # Direct import from project structure
 from core.interfaces import AgentInterface, LLMInterface, MemoryInterface
 from utils.helpers import load_prompt_template
-import logging
+from utils.token_utils import calculate_tokens, calculate_string_tokens, get_tokenizer
 
-_tokenizer = tiktoken.get_encoding("cl100k_base")
 logger = logging.getLogger(__name__)
 
 class BaseAgent(AgentInterface):
@@ -39,7 +37,6 @@ class BaseAgent(AgentInterface):
         self.token_used: int = 0
         self.prompt_tokens_used: int = 0
         self.completion_tokens_used: int = 0
-        self.tokenizer = _tokenizer
 
         # Load prompt wrapper template content during init
         if self.prompt_wrapper_path:
@@ -79,17 +76,13 @@ class BaseAgent(AgentInterface):
         # Merge default config with call-specific kwargs
         current_model_config = {**self.model_config, **kwargs}
         
-        prompt_tokens = 0
-        completion_tokens = 0
-
-        # Estimate prompt tokens using tiktoken
-        prompt_tokens = self._estimate_tokens(prompt)
+        # Estimate prompt tokens using shared token utility
+        prompt_tokens = calculate_tokens(prompt)
 
         response = self.llm_client.generate(prompt, **current_model_config)
         
-        # Estimate completion tokens
-        # TODO: Consider adding a check to make sure response is a string?
-        completion_tokens = len(self.tokenizer.encode(response))
+        # Estimate completion tokens using shared token utility
+        completion_tokens = calculate_string_tokens(response)
         
         # Update agent's token counts
         self.prompt_tokens_used += prompt_tokens
@@ -126,16 +119,8 @@ class BaseAgent(AgentInterface):
         return final_prompt_to_send
 
     def _estimate_tokens(self, messages: List[Dict[str, str]]) -> int:
-        """Estimates token count for a list of messages using tiktoken."""
-        num_tokens = 0
-        tokens_per_message = 4 # Approximation for role/metadata
-        for message in messages:
-            num_tokens += tokens_per_message
-            content = message.get("content")
-            if content:
-                num_tokens += len(self.tokenizer.encode(content))
-        num_tokens += 2 # End-of-list approximation
-        return num_tokens
+        """Estimates token count for a list of messages using the shared token utility."""
+        return calculate_tokens(messages)
 
     @property
     def last_response(self) -> str:

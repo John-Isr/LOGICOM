@@ -1,9 +1,9 @@
 from typing import List, Dict, Any, Optional
 from copy import deepcopy
 import logging
-import tiktoken 
 
 from core.interfaces import MemoryInterface, LLMInterface, INTERNAL_USER_ROLE, INTERNAL_AI_ROLE
+from utils.token_utils import calculate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,6 @@ class ChatSummaryMemory(MemoryInterface):
         self.summarization_trigger_tokens = summarization_trigger_tokens
         self.target_prompt_tokens = target_prompt_tokens 
         self.keep_messages_after_summary = keep_messages_after_summary
-        self.tokenizer = tiktoken.get_encoding("cl100k_base")
             
         self.messages: List[Dict[str, str]] = []
         self.log: List[Any] = []
@@ -61,19 +60,8 @@ class ChatSummaryMemory(MemoryInterface):
         self.log = []
 
     def _calculate_tokens(self, messages: List[Dict[str, str]]) -> int:
-        """Estimates token count for a list of messages using tiktoken."""
-        num_tokens = 0
-        # OpenAI counts tokens per message based on role and content
-        # Using a simplified approach: count tokens for content only
-        # Add a small buffer per message as an approximation for role/metadata tokens
-        tokens_per_message = 4 # Approximation
-        for message in messages:
-            num_tokens += tokens_per_message
-            content = message.get("content")
-            if content:
-                num_tokens += len(self.tokenizer.encode(content))
-        num_tokens += 2 # Add tokens for end-of-list approximation
-        return num_tokens
+        """Estimates token count for a list of messages using the shared token utility."""
+        return calculate_tokens(messages)
 
     def _check_context_length(self) -> None:
         """Checks token count and triggers summarization if trigger threshold is exceeded."""
