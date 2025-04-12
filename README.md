@@ -68,7 +68,7 @@ LOGICOM/ # Project Root
 ├── utils/
 │   ├── __init__.py
 │   ├── set_api_keys.py     # Script to set API keys as environment variables
-│   └── helpers.py          # Utility functions (prompt loading/formatting, logging, file handling)
+│   └── log_debate.py       # Logging, file handling
 ├── claims/                 # Default data directory containing claim datasets (e.g., CSV)
 │   └── ...
 ├── logs/                   # Default output directory for debate logs, summaries, and fallacy reports

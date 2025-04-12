@@ -4,7 +4,6 @@ import logging
 
 # Direct import from project structure
 from core.interfaces import AgentInterface, LLMInterface, MemoryInterface
-from utils.helpers import load_prompt_template
 from utils.token_utils import calculate_tokens, calculate_string_tokens, get_tokenizer
 
 logger = logging.getLogger(__name__)

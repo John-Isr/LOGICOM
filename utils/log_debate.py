@@ -11,105 +11,6 @@ from core.interfaces import INTERNAL_USER_ROLE, INTERNAL_AI_ROLE
 
 logger = logging.getLogger(__name__) # Added
 
-# --- Prompt Handling --- 
-
-def replace_variables(text: str, variables: Dict[str, Any]) -> str:
-    """Replaces placeholder variables in a string with their values."""
-    if not variables:
-        return text
-    for variable, value in variables.items():
-        # Ensure placeholders are distinct (e.g., <VARIABLE>)
-        placeholder = f"<{variable.strip('<> ')}>" 
-        text = text.replace(placeholder, str(value))
-    return text
-
-def load_prompt_template(file_path: str, variables: Optional[Dict[str, Any]] = None) -> Tuple[str, Optional[str]]:
-    """
-    Loads a prompt template from a file, extracts system and assistant sections,
-    and replaces variables.
-    Assumes specific markers: ==== SYSTEM ==== and ==== ASSISTANT ====
-    
-    Args:
-        file_path: Path to the prompt template file.
-        variables: Dictionary of variables to replace in the prompts.
-
-    Returns:
-        A tuple (system_prompt, assistant_prompt). Assistant prompt can be None.
-        Returns (full_content, None) if markers are not found.
-    """
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            content = file.read()
-    except FileNotFoundError:
-        logger.error(f"Prompt file not found at {file_path}") # Use logger
-        raise # Re-raise the FileNotFoundError
-    except Exception as e:
-        logger.error(f"Error reading prompt file {file_path}: {e}", exc_info=True) # Use logger
-        return f"Error reading prompt file: {e}", None
-
-    system_start_marker = "==== SYSTEM ===="
-    assistant_start_marker = "==== ASSISTANT ====" # Using ASSISTANT marker as in original
-
-    system_start_idx = content.find(system_start_marker)
-    assistant_start_idx = content.find(assistant_start_marker)
-
-    if system_start_idx != -1 and assistant_start_idx != -1:
-        system_start = system_start_idx + len(system_start_marker)
-        system_end = assistant_start_idx
-        system_text = content[system_start:system_end].strip()
-
-        assistant_start = assistant_start_idx + len(assistant_start_marker)
-        assistant_text = content[assistant_start:].strip()
-        
-        # Replace variables if provided
-        system_text = replace_variables(system_text, variables or {})
-        assistant_text = replace_variables(assistant_text, variables or {})
-        
-        return system_text, assistant_text
-    elif system_start_idx != -1:
-        # Only system prompt found
-        system_start = system_start_idx + len(system_start_marker)
-        system_text = content[system_start:].strip()
-        system_text = replace_variables(system_text, variables or {})
-        return system_text, None
-    else:
-        # No markers found, treat entire file as system prompt (or maybe user? TBD)
-        logger.warning(f"Markers not found in {file_path}. Treating full content as system prompt.") # Use logger
-        full_content = replace_variables(content, variables or {})
-        return full_content, None
-
-# --- Variable Extraction --- 
-
-def extract_claim_data_for_prompt(claim_data: pd.Series, column_mapping: Dict[str, str]) -> Dict[str, str]:
-    """
-    Extracts variables for prompts from input data using configurable column names.
-    Currently extracts: TOPIC, CLAIM, REASON.
-    
-    Args:
-        claim_data: The data record (e.g., a row from a pandas DataFrame).
-        column_mapping: Dictionary mapping standard prompt variable names 
-                        (e.g., "TOPIC", "CLAIM", "ORIGINAL_TEXT", "REASON", 
-                         "WARRANT_ONE", "WARRANT_TWO") to the actual column 
-                         names in the claim_data Series.
-
-    Returns:
-        Dictionary of variables for the prompt template.
-    """
-    base_vars = {}
-    # Map standard variables to columns using the provided mapping
-    # Only extract variables currently used in prompts
-    vars_to_extract = ["TOPIC", "CLAIM", "REASON"] 
-    for var_name in vars_to_extract:
-        column_name = column_mapping.get(var_name)
-        if column_name:
-            base_vars[var_name] = str(claim_data.get(column_name, ''))
-        else:
-            logger.warning(f"No column mapping provided for standard variable '{var_name}'. It will be empty.")
-            base_vars[var_name] = ''
-
-
-    return base_vars
-
 # --- Logging --- 
 
 def create_directory(directory_path: str, overwrite: bool = True) -> None:
@@ -314,6 +215,7 @@ def _save_log_xlsx(xlsx_path: str, data_to_append: Dict[str, Any]) -> None:
     except Exception as e:
         logger.error(f"Error saving XLSX log to {xlsx_path}: {e}", exc_info=True) # Use logger
 
+# The main function to save debate logs, handled by Orchestrator
 def save_debate_log(log_history: List[Any], 
                       log_base_path: str, 
                       topic_id: str, 
@@ -323,7 +225,7 @@ def save_debate_log(log_history: List[Any],
                       number_of_rounds: int, 
                       finish_reason: str, 
                       claim: Optional[str] = None, 
-                      save_formats: List[str] = ['json', 'html', 'txt', 'xlsx']) -> None:
+                      save_formats: List[str] = ['json', 'html', 'txt', 'xlsx', 'clean']) -> None:
     """
     Saves the debate log in specified formats to a structured directory.
 
@@ -337,7 +239,7 @@ def save_debate_log(log_history: List[Any],
         number_of_rounds: Total rounds in the debate.
         finish_reason: Reason why the debate ended.
         claim: The text of the claim being debated (optional, for summary).
-        save_formats: List of formats to save ('json', 'html', 'txt', 'xlsx').
+        save_formats: List of formats to save ('json', 'html', 'txt', 'xlsx', 'clean').
     """
     
     log_directory = os.path.join(log_base_path, topic_id, helper_type)
@@ -357,6 +259,15 @@ def save_debate_log(log_history: List[Any],
         "Claim": claim
     }
 
+    # Create a clean copy of the history with no metadata on messages
+    clean_history = []
+    for entry in log_history:
+        if entry.get("type") == "message":
+            clean_entry = {"type": "message", "data": entry.get("data", {})}
+            clean_history.append(clean_entry)
+        else:
+            clean_history.append(entry)  # Keep other entries as-is
+
     if 'json' in save_formats:
         json_path = os.path.join(log_directory, f"{base_filename}.json")
         _save_log_json(log_history, json_path, metadata)
@@ -368,6 +279,19 @@ def save_debate_log(log_history: List[Any],
     if 'txt' in save_formats: # Saves JSON dump as .txt
         txt_path = os.path.join(log_directory, f"{base_filename}.txt")
         _save_log_txt(log_history, txt_path, metadata)
+    
+    if 'clean' in save_formats:
+        if 'json' in save_formats:
+            clean_json_path = os.path.join(log_directory, f"{base_filename}_clean.json")
+            _save_log_json(clean_history, clean_json_path, metadata)
+            
+        if 'html' in save_formats:
+            clean_html_path = os.path.join(log_directory, f"{base_filename}_clean.html")
+            _save_log_html(clean_history, clean_html_path, metadata)
+            
+        if 'txt' in save_formats:
+            clean_txt_path = os.path.join(log_directory, f"{base_filename}_clean.txt")
+            _save_log_txt(clean_history, clean_txt_path, metadata)
         
     if 'xlsx' in save_formats:
         _save_log_xlsx(xlsx_summary_path, metadata)

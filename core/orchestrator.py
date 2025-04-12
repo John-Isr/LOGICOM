@@ -12,7 +12,7 @@ from agents.persuader_agent import PersuaderAgent
 from agents.debater_agent import DebaterAgent
 from agents.moderator_agent import ModeratorAgent # For type hints
 from core.interfaces import MemoryInterface # For type hinting if needed
-from utils.helpers import save_debate_log, save_fallacy_data # Import save_fallacy_data
+from utils.log_debate import save_debate_log
 from core.interfaces import INTERNAL_USER_ROLE, INTERNAL_AI_ROLE # Import standard roles
 
 logger = logging.getLogger(__name__)

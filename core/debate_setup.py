@@ -10,9 +10,36 @@ from agents.persuader_agent import PersuaderAgent
 from agents.debater_agent import DebaterAgent
 from agents.moderator_agent import ModeratorAgent
 from llm.llm_factory import LLMFactory
-from utils.helpers import extract_claim_data_for_prompt as extract_debate_details
 
 logger = logging.getLogger(__name__)
+
+# Helper functions
+def _extract_claim_data_for_prompt(claim_data: pd.Series, column_mapping: Dict[str, str]) -> Dict[str, str]:
+    """
+    Extracts variables for prompts from input data using configurable column names.
+    Currently extracts: TOPIC, CLAIM, REASON.
+    
+    Args:
+        claim_data: The data record (e.g., a row from a pandas DataFrame).
+        column_mapping: Dictionary mapping standard prompt variable names 
+                        (e.g., "TOPIC", "CLAIM", "ORIGINAL_TEXT", "REASON") 
+                        to the actual column names in the claim_data Series.
+
+    Returns:
+        Dictionary of variables for the prompt template.
+    """
+    base_vars = {}
+    # Map standard variables to columns using the provided mapping
+    vars_to_extract = ["TOPIC", "CLAIM", "REASON"] 
+    for var_name in vars_to_extract:
+        column_name = column_mapping.get(var_name)
+        if column_name:
+            base_vars[var_name] = str(claim_data.get(column_name, ''))
+        else:
+            logger.warning(f"No column mapping provided for standard variable '{var_name}'. It will be empty.")
+            base_vars[var_name] = ''
+
+    return base_vars
 
 class DebateInstanceSetup:
     """Handles claim-specific setup: formatting prompts, creating clients & agents."""
@@ -31,7 +58,7 @@ class DebateInstanceSetup:
         # --- Setup Steps --- 
         # Step 1: Extract Debate Details 
         column_mapping = self.debate_settings.get('column_mapping', {}) # TODO: Don't use get, if this isn't there, an error should be raised
-        self.debate_details = extract_debate_details(self.claim_data, column_mapping)
+        self.debate_details = _extract_claim_data_for_prompt(self.claim_data, column_mapping)
         logger.debug("Extracted debate details.")
         
         # Step 2: Format Prompts
