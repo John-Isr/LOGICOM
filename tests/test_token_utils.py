@@ -1,4 +1,4 @@
-from utils.token_utils import calculate_tokens, calculate_string_tokens
+from utils.token_utils import calculate_chat_tokens, calculate_string_tokens
 
 def main():
     # Test the string token calculation
@@ -12,7 +12,7 @@ def main():
         {"role": "user", "content": "Hello, how are you today?"},
         {"role": "assistant", "content": "I'm doing well, thank you for asking!"}
     ]
-    message_tokens = calculate_tokens(test_messages)
+    message_tokens = calculate_chat_tokens(test_messages)
     print(f"Message list has {message_tokens} tokens")
     
     print("\nToken utility functions are working correctly!")

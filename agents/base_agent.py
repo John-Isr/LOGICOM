@@ -4,7 +4,7 @@ import logging
 
 # Direct import from project structure
 from core.interfaces import AgentInterface, LLMInterface, MemoryInterface
-from utils.token_utils import calculate_tokens, calculate_string_tokens, get_tokenizer
+from utils.token_utils import calculate_chat_tokens, calculate_string_tokens, get_tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,51 @@ class BaseAgent(AgentInterface):
         self.completion_tokens_used = 0
         logger.info(f"{self.agent_name} memory/state reset.")
 
+    def get_memory_tokens(self) -> Dict[str, int]:
+        """
+        Retrieves token usage from the memory component without modifying agent counts.
+        
+        Returns:
+            Dict with prompt_tokens, completion_tokens, and total_tokens from memory operations.
+        """
+        if self.memory:
+            return self.memory.get_token_usage()
+        return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+    # Because of encapsulation, this getter includes both the agent's usage and the memory's usage.
+    def get_token_usage(self) -> Dict[str, int]:
+        """
+        Returns the agent's current token usage (excluding memory operations).
+        
+        Returns:
+            Dict with prompt_tokens, completion_tokens, and total_tokens used by the agent.
+        """
+        return {
+            "prompt_tokens": self.prompt_tokens_used,
+            "completion_tokens": self.completion_tokens_used,
+            "total_tokens": self.token_used
+        }
+        
+    def get_total_token_usage(self) -> Dict[str, int]:
+        """
+        Returns the agent's total token usage including memory operations.
+        
+        Returns:
+            Dict with prompt_tokens, completion_tokens, and total_tokens including memory.
+        """
+        agent_usage = self.get_token_usage()
+        memory_usage = self.get_memory_tokens()
+        
+        total_prompt = agent_usage["prompt_tokens"] + memory_usage["prompt_tokens"]
+        total_completion = agent_usage["completion_tokens"] + memory_usage["completion_tokens"]
+        total_tokens = total_prompt + total_completion
+        
+        return {
+            "prompt_tokens": total_prompt,
+            "completion_tokens": total_completion, 
+            "total_tokens": total_tokens
+        }
+
     def _generate_response(self, prompt: List[Dict[str, str]], **kwargs) -> str:
         """
         Helper method - calls the LLM and handles basic response/error cases.
@@ -76,11 +121,10 @@ class BaseAgent(AgentInterface):
         current_model_config = {**self.model_config, **kwargs}
         
         # Estimate prompt tokens using shared token utility
-        prompt_tokens = calculate_tokens(prompt)
+        prompt_tokens = calculate_chat_tokens(prompt)
 
         response = self.llm_client.generate(prompt, **current_model_config)
         
-        # Estimate completion tokens using shared token utility
         completion_tokens = calculate_string_tokens(response)
         
         # Update agent's token counts
@@ -117,9 +161,6 @@ class BaseAgent(AgentInterface):
         logger.debug(f"Applied prompt wrapper. Final user message: {wrapped_content[:100]}...")
         return final_prompt_to_send
 
-    def _estimate_tokens(self, messages: List[Dict[str, str]]) -> int:
-        """Estimates token count for a list of messages using the shared token utility."""
-        return calculate_tokens(messages)
 
     @property
     def last_response(self) -> str:

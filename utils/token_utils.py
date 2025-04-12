@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 # Create a single shared tokenizer instance
 _tokenizer = tiktoken.get_encoding("cl100k_base")
 
-def calculate_tokens(messages: List[Dict[str, str]]) -> int:
+def calculate_chat_tokens(messages: List[Dict[str, str]]) -> int:
     """
     Estimates token count for a list of messages using tiktoken.
     

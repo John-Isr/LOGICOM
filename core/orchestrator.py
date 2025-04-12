@@ -309,12 +309,21 @@ class DebateOrchestrator:
         }
 
     def _calculate_token_usage(self) -> Dict[str, int]:
-        """Calculate token usage for all components."""
+        """Calculate token usage for all components, including memory operations."""
+        # Get token counts directly from each agent
+        persuader_tokens = self.persuader.get_total_token_usage()["total_tokens"]
+        debater_tokens = self.debater.get_total_token_usage()["total_tokens"]
+        term_mod_tokens = self.moderator_terminator.get_total_token_usage()["total_tokens"]
+        topic_mod_tokens = self.moderator_topic.get_total_token_usage()["total_tokens"]
+        
+        # Helper tokens are tracked separately
+        helper_tokens = self.persuader.helper_token_used if self.persuader.use_helper_feedback else 0
+        
         return {
-            'persuader': self.persuader.token_used,
-            'debater': self.debater.token_used,
-            'moderator': self.moderator_terminator.token_used + self.moderator_topic.token_used,
-            'helper': self.persuader.helper_token_used if self.persuader.use_helper_feedback else 0
+            'persuader': persuader_tokens,
+            'debater': debater_tokens,
+            'moderator': term_mod_tokens + topic_mod_tokens,
+            'helper': helper_tokens
         }
 
     def _log_token_usage(self, usage: Dict[str, int]):

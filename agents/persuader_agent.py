@@ -6,7 +6,7 @@ import logging
 # Direct imports from project structure
 from agents.base_agent import BaseAgent
 from core.interfaces import LLMInterface, MemoryInterface, INTERNAL_USER_ROLE, INTERNAL_AI_ROLE
-from utils.token_utils import calculate_string_tokens
+from utils.token_utils import calculate_string_tokens, calculate_chat_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ class PersuaderAgent(BaseAgent):
         helper_prompt_history = [{"role": "user", "content": final_user_instruction}]
 
         # Estimate helper prompt tokens
-        prompt_tokens = self._estimate_tokens(helper_prompt_history)
+        prompt_tokens = calculate_chat_tokens(helper_prompt_history)
         
         # Call helper LLM
         raw_feedback = self.helper_llm_client.generate(helper_prompt_history, **self.helper_model_config)
