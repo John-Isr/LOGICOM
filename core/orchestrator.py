@@ -39,15 +39,15 @@ class DebateOrchestrator:
                  moderator_topic_checker: ModeratorAgent,
                  # Settings
                  max_rounds: int,
-                 logger_instance: logging.Logger | None = None):
+                 turn_delay_seconds: float):
         self.persuader = persuader
         self.debater = debater
         self.moderator_terminator = moderator_terminator
         self.moderator_topic = moderator_topic_checker
-
+        self.turn_delay_seconds = turn_delay_seconds
         self.max_rounds = max_rounds
 
-        self.logger = logger_instance or logging.getLogger(__name__)
+        
         self.log_handlers = {} # Dict to store loggers for different formats
 
     
@@ -133,6 +133,11 @@ class DebateOrchestrator:
 
     def _run_persuader_turn(self, previous_debater_response: str) -> str:
         """Run the persuader's turn in the debate."""
+        # --- Add Turn Delay ---
+        if self.turn_delay_seconds > 0:
+            logger.info(f"Waiting for {self.turn_delay_seconds:.2f} seconds before debater's turn.")
+            time.sleep(self.turn_delay_seconds)
+        # ----------------------
 
         # First round has no opponent message
         opponent_message = previous_debater_response if previous_debater_response else None
@@ -144,6 +149,11 @@ class DebateOrchestrator:
 
     def _run_debater_turn(self, persuader_message: str) -> str:
         """Run the debater's turn in the debate."""
+        # --- Add Turn Delay ---
+        if self.turn_delay_seconds > 0:
+            logger.info(f"Waiting for {self.turn_delay_seconds:.2f} seconds before debater's turn.")
+            time.sleep(self.turn_delay_seconds)
+        # ----------------------
 
         debater_response = self.debater.call(persuader_message)
         print(f"{self.DEBATER_COLOR}Debater: {debater_response}{self.RESET_ALL}")
