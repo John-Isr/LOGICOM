@@ -96,27 +96,60 @@ llm_models:
       temperature: 0.7
 
   # === Local LLM Templates ===
-  ollama_deepseek:
+  # --- Local Hugging Face Configs --- 
+  # Ensure you have sufficient VRAM/RAM and correct PyTorch/CUDA setup.
+  local_gemma_7b_4bit:
     provider: local
-    local_type: ollama
-    model_name: deepseek-coder # Example: Replace with correct model tag
-    api_base_url: http://localhost:11434
-    default_config:
-      temperature: 0.6
+    local_type: huggingface 
+    model_name_or_path: google/gemma-7b-it
+    quantization_bits: 4
+    generation_defaults:
+      temperature: 0.7
+      max_new_tokens: 1024
+      do_sample: True
 
-  ollama_llama:
+  local_mistral_7b_instruct_4bit:
     provider: local
-    local_type: ollama
-    model_name: llama3 # Example: Replace with llama2, llama3:70b etc.
-    api_base_url: http://localhost:11434
-    default_config:
-      temperature: 0.6
+    local_type: huggingface
+    model_name_or_path: mistralai/Mistral-7B-Instruct-v0.2 # Popular 7B instruct model
+    quantization_bits: 4
+    generation_defaults:
+      temperature: 0.7
+      max_new_tokens: 1024
+      do_sample: True
 
-  generic_local_api:
+  local_llama31_8b_4bit:
     provider: local
-    local_type: generic
-    model_name: local-model # Name might be handled by the server
-    api_base_url: http://localhost:8000/v1 # Example endpoint - CHANGE THIS
-    # api_key:
-    default_config:
-      temperature: 0.6 
+    local_type: huggingface
+    model_name_or_path: meta-llama/Meta-Llama-3.1-8B-Instruct
+    quantization_bits: 4
+    generation_defaults:
+      temperature: 0.6
+      max_new_tokens: 1024
+      do_sample: True
+      # Note: Llama3.1 might need specific EOS tokens - check model card.
+      # Example if needed: eos_token_id: [128001, 128009] 
+
+  local_deepseek_coder_6_7b_4bit:
+    provider: local
+    local_type: huggingface
+    model_name_or_path: deepseek-ai/deepseek-coder-6.7b-instruct
+    quantization_bits: 4
+    generation_defaults:
+      temperature: 0.1 
+      max_new_tokens: 1024
+      do_sample: True
+
+  # Example of loading from a local path (if you downloaded it)
+  #  local_gemma_downloaded_4bit:
+  #    provider: local
+  #    local_type: huggingface
+  #    model_name_or_path: /path/to/your/downloaded/gemma-7b-it-weights/ # <-- CHANGE THIS PATH
+  #    quantization_bits: 4
+
+  # Example of disabling quantization (requires much more VRAM!)
+  # local_gemma_7b_no_quant:
+  #   provider: local
+  #   local_type: huggingface
+  #   model_name_or_path: google/gemma-7b-it
+  #   quantization_bits: null # Use YAML null or omit the line

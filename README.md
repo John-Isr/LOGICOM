@@ -68,7 +68,7 @@ LOGICOM/ # Project Root
 ├── utils/
 │   ├── __init__.py
 │   ├── set_api_keys.py     # Script to set API keys as environment variables
-│   └── log_debate.py       # Logging, file handling
+│   ├── log_debate.py       # Logging, file handling
 │   └── token_utils.py      # Token calculation utilities for LLMs
 ├── claims/                 # Default data directory containing claim datasets (e.g., CSV)
 │   └── ...
@@ -109,7 +109,7 @@ LOGICOM/ # Project Root
         ```
     *   **(Less Secure) Edit `config/models.yaml`:** Add your keys directly into the `models.yaml` file under the respective provider configurations.
 
-3.  **Data:** Ensure the dataset specified in `config/settings.yaml` (`debate_settings.data_path`) is accessible. The default configuration points to `./claims/all-claim-not-claim.csv` relative to the project root. `main.py` will attempt to resolve this path relative to its own location if the direct path isn't found.
+3.  **Data:** Ensure the dataset specified in `config/settings.yaml` (`debate_settings.claims_file_path`) is accessible. The default configuration points to `./claims/all-claim-not-claim.csv` relative to the project root. `main.py` will attempt to resolve this path relative to its own location if the direct path isn't found.
 4.  **Prompts:** Ensure the prompt files referenced in `config/settings.yaml` exist within the `prompts/` directory or paths specified.
 
 ## Running

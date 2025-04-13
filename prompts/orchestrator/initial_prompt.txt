@@ -1,6 +1,0 @@
-The conversation is about the 
-topic:  "{TOPIC}" 
-claim: "{CLAIM}"
-reason: "{REASON}"
-
-Please articulate if you agree or disagree. 

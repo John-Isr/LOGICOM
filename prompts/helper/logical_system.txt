@@ -14,7 +14,7 @@
 Also, in less than 10 words, describe the main logical technique you used to improve the response.
 
 # The answer MUST be structured in the following JSON format ONLY:
-# {{
+# {
 #   "response": "<The rewritten text incorporating the logical argument>"
 #   "feedback_tag": "<Your ~10 word description of the logical technique used>",
-# }} 
+# } 

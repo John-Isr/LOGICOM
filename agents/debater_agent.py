@@ -11,16 +11,14 @@ class DebaterAgent(BaseAgent):
     def __init__(self,
                  llm_client: LLMInterface,
                  memory: MemoryInterface,
-                 variables: Optional[Dict] = None,
                  agent_name: str = "DebaterAgent",
                  model_config: Optional[Dict[str, Any]] = None,
-                 prompt_wrapper_path: Optional[str] = None):
+                 prompt_wrapper: Optional[str] = None):
 
         # Pass relevant args to BaseAgent, including wrapper path, main LLM client and memory
         super().__init__(llm_client=llm_client, memory=memory, agent_name=agent_name,
-                         model_config=model_config, prompt_wrapper_path=prompt_wrapper_path)
+                         model_config=model_config, prompt_wrapper=prompt_wrapper)
 
-        self.variables = variables or {}
 
     def call(self, opponent_message: str) -> str:
         #TODO: simplify this so it takes the opponent message and wraps it, adds to a memory read, and then generates a response, then adds to memory the original opponent message and the response

@@ -9,3 +9,7 @@ colorama
 openpyxl
 tiktoken
 ollama
+torch
+transformers
+accelerate
+bitsandbytes

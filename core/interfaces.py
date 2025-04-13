@@ -7,6 +7,12 @@ INTERNAL_USER_ROLE = "user"
 INTERNAL_AI_ROLE = "assistant"
 # ------------------------------------
 
+# --- Standard Helper Type Names ---
+HELPER_TYPE_NONE = "No_Helper"
+HELPER_TYPE_FALLACY = "Fallacy_Helper"
+HELPER_TYPE_LOGICAL = "Logical_Helper"
+# ----------------------------------
+
 class LLMInterface(ABC):
     """Interface for Large Language Model interaction."""
 
