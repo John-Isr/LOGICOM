@@ -22,18 +22,17 @@ logger = logging.getLogger(__name__)
 class DebateOrchestrator:
     """Orchestrates the debate, managing agent turns and moderation checks."""
 
-    # Define colors (assuming Persuader=BLUE, Debater=GREEN)
     PERSUADER_COLOR = Fore.BLUE
     DEBATER_COLOR = Fore.GREEN
     ROUND_COLOR = Fore.RED
-    MODERATOR_COLOR = Fore.YELLOW # For moderator actions
+    MODERATOR_COLOR = Fore.YELLOW
     ERROR_COLOR = Fore.RED + Style.BRIGHT
-    RESET_ALL = Style.RESET_ALL # Use this if init(autoreset=True) is not used
+    RESET_ALL = Style.RESET_ALL
 
     def __init__(self,
+                 # Agents
                  persuader: PersuaderAgent,
                  debater: DebaterAgent,
-                 # Individual moderator agents
                  moderator_terminator: ModeratorAgent,
                  moderator_topic_checker: ModeratorAgent,
                  # Settings
@@ -46,9 +45,6 @@ class DebateOrchestrator:
         self.turn_delay_seconds = turn_delay_seconds
         self.max_rounds = max_rounds
 
-        
-        self.log_handlers = {} # Dict to store loggers for different formats
-
     
 # The main loop of the debate
     def run_debate(self, topic_id: str, claim: str, log_config: Dict[str, Any], helper_type: str) -> Dict[str, Any]:
@@ -59,7 +55,7 @@ class DebateOrchestrator:
             topic_id: Identifier for the topic being debated.
             claim: The text of the claim.
             log_config: Dictionary with logging parameters ('log_base_path', 'log_formats', etc.).
-            helper_type: Name identifying (for logging).
+            helper_type: The type of helper used (for logging).
         """
         # Initialize debate
         chat_id = self._initialize_debate(topic_id, helper_type)
@@ -67,8 +63,8 @@ class DebateOrchestrator:
         # Initialize state
         keep_talking = True
         round_number = 0
-        final_result_status = None  # Will be set based on actual outcome
-        finish_reason = None  # Will be set based on actual outcome
+        final_result_status = None
+        finish_reason = None
         current_persuader_response = ""
         debater_response = ""
 
