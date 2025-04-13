@@ -1,9 +1,9 @@
 from typing import List, Dict, Any, Optional
 from copy import deepcopy
 import logging
-import tiktoken 
 
 from core.interfaces import MemoryInterface, LLMInterface, INTERNAL_USER_ROLE, INTERNAL_AI_ROLE
+from utils.token_utils import calculate_chat_tokens, calculate_string_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,14 @@ class ChatSummaryMemory(MemoryInterface):
         self.summarization_trigger_tokens = summarization_trigger_tokens
         self.target_prompt_tokens = target_prompt_tokens 
         self.keep_messages_after_summary = keep_messages_after_summary
-        self.tokenizer = tiktoken.get_encoding("cl100k_base")
             
         self.messages: List[Dict[str, str]] = []
         self.log: List[Any] = []
+        
+        # Token tracking for memory operations
+        self.prompt_tokens_used: int = 0
+        self.completion_tokens_used: int = 0
+        self.total_tokens_used: int = 0
 
     def add_user_message(self, message: str) -> None:
         """Adds a user message using the internal standard role."""
@@ -59,21 +63,17 @@ class ChatSummaryMemory(MemoryInterface):
         """Resets the memory, clearing messages and log."""
         self.messages = []
         self.log = []
+        self.prompt_tokens_used = 0
+        self.completion_tokens_used = 0
+        self.total_tokens_used = 0
 
-    def _calculate_tokens(self, messages: List[Dict[str, str]]) -> int:
-        """Estimates token count for a list of messages using tiktoken."""
-        num_tokens = 0
-        # OpenAI counts tokens per message based on role and content
-        # Using a simplified approach: count tokens for content only
-        # Add a small buffer per message as an approximation for role/metadata tokens
-        tokens_per_message = 4 # Approximation
-        for message in messages:
-            num_tokens += tokens_per_message
-            content = message.get("content")
-            if content:
-                num_tokens += len(self.tokenizer.encode(content))
-        num_tokens += 2 # Add tokens for end-of-list approximation
-        return num_tokens
+    def get_token_usage(self) -> Dict[str, int]:
+        """Returns the token usage by memory operations (primarily summarization)."""
+        return {
+            "prompt_tokens": self.prompt_tokens_used,
+            "completion_tokens": self.completion_tokens_used,
+            "total_tokens": self.total_tokens_used
+        }
 
     def _check_context_length(self) -> None:
         """Checks token count and triggers summarization if trigger threshold is exceeded."""
@@ -82,7 +82,7 @@ class ChatSummaryMemory(MemoryInterface):
             logger.debug("Summarization trigger token limit is 0 or less. Skipping context length check.")
             return
             
-        current_tokens = self._calculate_tokens(self.messages)
+        current_tokens = calculate_chat_tokens(self.messages)
         logger.debug(f"Current prompt token count estimate: {current_tokens}")
 
         # Trigger based on summarization_trigger_tokens
@@ -111,9 +111,20 @@ class ChatSummaryMemory(MemoryInterface):
         user_content = f"Summarize this conversation history:\n{history_text}"
         summarizer_prompt = [{"role": "user", "content": user_content}]
         
+        # Calculate prompt tokens
+        prompt_tokens = calculate_chat_tokens(summarizer_prompt)
+        
         logger.info(f"Calling summarizer LLM ({self.summarizer_llm.__class__.__name__}) to summarize {len(messages_to_summarize)} messages...")
         summary = self.summarizer_llm.generate(summarizer_prompt)
         logger.info("Summarization attempt complete.")
+
+        # Calculate completion tokens
+        completion_tokens = calculate_string_tokens(summary) if summary else 0
+        
+        # Update token tracking
+        self.prompt_tokens_used += prompt_tokens
+        self.completion_tokens_used += completion_tokens
+        self.total_tokens_used += prompt_tokens + completion_tokens
 
         # Check if the summary is valid (i.e., not None or empty)
         if summary: # Simplified check
@@ -128,7 +139,7 @@ class ChatSummaryMemory(MemoryInterface):
                 "data": {"summary": summary, "messages_summarized": len(messages_to_summarize)}, 
                 "context_injection": summary_content
             })
-            new_token_count = self._calculate_tokens(self.messages)
+            new_token_count = calculate_chat_tokens(self.messages)
             logger.info(f"History summarized. New token count estimate: {new_token_count}")
         else:
             # Handle case where generate() succeeded but returned None or empty string

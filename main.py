@@ -142,7 +142,6 @@ def main():
                     moderator_terminator=setup.moderator_terminator,
                     moderator_topic_checker=setup.moderator_topic_checker,
                     max_rounds=int(debate_settings.get('max_rounds', 12)),
-                    turn_delay_seconds=float(debate_settings.get('turn_delay_seconds', 0.0)),
                     logger_instance=logger
                 )
                 

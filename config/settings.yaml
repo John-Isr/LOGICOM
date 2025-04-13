@@ -13,14 +13,12 @@ debate_settings:
 
   # Output Settings
   log_base_path: ./logs # Where to save debate logs 
-  log_formats: [json, html, txt, xlsx] 
+  log_formats: [json, html, txt, xlsx, clean] # Added 'clean' format option
   # TODO: Add fallacy analysis output path option
   fallacy_csv_path: ./logs/fallacies.csv 
   
   # Debate Flow Control
-  max_rounds: 12 # Original safety stop
-  # Delay between turns
-  turn_delay_seconds: 1 # Default delay between turns
+  max_rounds: 10 # Original safety stop
   
   # Memory Management
   summarization_trigger_tokens: 6000 # Token threshold to trigger summarization
