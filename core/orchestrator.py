@@ -39,7 +39,6 @@ class DebateOrchestrator:
                  moderator_topic_checker: ModeratorAgent,
                  # Settings
                  max_rounds: int,
-                 turn_delay_seconds: float = 0.0,
                  logger_instance: logging.Logger | None = None):
         self.persuader = persuader
         self.debater = debater
@@ -47,7 +46,6 @@ class DebateOrchestrator:
         self.moderator_topic = moderator_topic_checker
 
         self.max_rounds = max_rounds
-        self.turn_delay_seconds = turn_delay_seconds
 
         self.logger = logger_instance or logging.getLogger(__name__)
         self.log_handlers = {} # Dict to store loggers for different formats
@@ -81,7 +79,7 @@ class DebateOrchestrator:
             print(f"{self.ROUND_COLOR}\n--- Round {round_number} ---{self.RESET_ALL}")
 
             # Run Persuader's turn
-            current_persuader_response = self._run_persuader_turn(round_number, debater_response)
+            current_persuader_response = self._run_persuader_turn(debater_response)
 
 
             # Run Debater's turn
@@ -133,11 +131,11 @@ class DebateOrchestrator:
 
         return chat_id
 
-    def _run_persuader_turn(self, round_number: int, previous_debater_response: str) -> str:
+    def _run_persuader_turn(self, previous_debater_response: str) -> str:
         """Run the persuader's turn in the debate."""
 
         # First round has no opponent message
-        opponent_message = previous_debater_response if round_number > 1 else None
+        opponent_message = previous_debater_response if previous_debater_response else None
         persuader_response = self.persuader.call(opponent_message)
             
         print(f"{self.PERSUADER_COLOR}Persuader: {persuader_response}{self.RESET_ALL}")
