@@ -52,18 +52,18 @@ class DebateOrchestrator:
 
     
 # The main loop of the debate
-    def run_debate(self, topic_id: str, claim: str, log_config: Dict[str, Any], helper_type_name: str) -> Dict[str, Any]:
+    def run_debate(self, topic_id: str, claim: str, log_config: Dict[str, Any], helper_type: str) -> Dict[str, Any]:
         """
         Runs a single debate for the given topic.
 
         Args:
-            topic_id
-            claim
+            topic_id: Identifier for the topic being debated.
+            claim: The text of the claim.
             log_config: Dictionary with logging parameters ('log_base_path', 'log_formats', etc.).
-            helper_type_name: Name identifying (for logging).
+            helper_type: Name identifying (for logging).
         """
         # Initialize debate
-        chat_id = self._initialize_debate(topic_id, helper_type_name)
+        chat_id = self._initialize_debate(topic_id, helper_type)
         
         # Initialize state
         keep_talking = True
@@ -106,10 +106,10 @@ class DebateOrchestrator:
             final_result_status=final_result_status,
             finish_reason=finish_reason,
             log_config=log_config,
-            helper_type_name=helper_type_name
+            helper_type=helper_type
         )
 
-    def _initialize_debate(self, topic_id: str, helper_type_name: str) -> str:
+    def _initialize_debate(self, topic_id: str, helper_type: str) -> str:
         """Initialize a new debate session."""
         # Reset all agents
         self.persuader.reset()
@@ -122,11 +122,11 @@ class DebateOrchestrator:
         
         # Log initial setup
         logger.info(f"\n--- Starting Debate --- Topic: {topic_id}, Chat ID: {chat_id} ---")
-        logger.info(f"Config: {helper_type_name}")
+        logger.info(f"Config: {helper_type}")
         logger.info(f"Persuader: {self.persuader.agent_name}, LLM: {self.persuader.llm_client.__class__.__name__}")
         logger.info(f"Debater: {self.debater.agent_name}, LLM: {self.debater.llm_client.__class__.__name__}")
-        logger.info(f"Moderator (Terminator): {self.moderator_terminator.agent_name}")
-        logger.info(f"Moderator (Topic): {self.moderator_topic.agent_name}")
+        logger.info(f"Moderator (Terminator): {self.moderator_terminator.agent_name}, LLM: {self.moderator_terminator.llm_client.__class__.__name__}")
+        logger.info(f"Moderator (Topic): {self.moderator_topic.agent_name}, LLM: {self.moderator_topic.llm_client.__class__.__name__}")
         logger.info(f"Max rounds limit set to: {self.max_rounds}")
 
         return chat_id
@@ -226,7 +226,7 @@ class DebateOrchestrator:
 
     def _finalize_debate(self, topic_id: str, chat_id: str, claim: str, round_number: int, 
                         final_result_status: str, finish_reason: str, log_config: Dict[str, Any], 
-                        helper_type_name: str) -> Dict[str, Any]:
+                        helper_type: str) -> Dict[str, Any]:
         """Finalize the debate by saving logs and preparing results."""
         logger.info(f"\n--- Debate Ended --- Round: {round_number}, Status: {final_result_status}, Reason: {finish_reason} ---")
 
@@ -240,7 +240,7 @@ class DebateOrchestrator:
             log_base_path=log_base_path,
             topic_id=topic_id,
             chat_id=chat_id,
-            helper_type=helper_type_name,
+            helper_type=helper_type,
             result=final_result_status,
             number_of_rounds=round_number,
             finish_reason=finish_reason,

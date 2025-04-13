@@ -12,4 +12,4 @@
 
 "Don't cease speaking until you have persuaded the opponent to acknowledge the validity of your assertion: '<CLAIM>'."
 "Always end your turn by asking for the opponent's current stance specifically on the claim: '<CLAIM>'. Do not ask a simple yes/no question."
-"Example ending: 'Given these points, what is your current assessment regarding the claim that {CLAIM}?'"
+"Example ending: 'Given these points, what is your current assessment regarding the claim that <CLAIM>?'"

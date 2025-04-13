@@ -1,6 +1,6 @@
 import yaml
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -29,49 +29,104 @@ def load_yaml_config(file_path: str) -> Dict[str, Any]:
         logger.error(f"An unexpected error occurred loading config {file_path}: {e}", exc_info=True)
         raise
 
-def load_app_config(settings_path: str = DEFAULT_SETTINGS_PATH, 
-                      models_path: str = DEFAULT_MODELS_PATH) -> Dict[str, Any]:
+def _load_prompt(file_path: str) -> str:
+    """Loads content from a text file, assuming path is relative to main project directory.
+       Raises FileNotFoundError or OSError on failure."""
+    logger.debug(f"Attempting to load prompt from: {file_path}")
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        logger.debug(f"Successfully loaded prompt from: {file_path}")
+        if not content:
+             logger.error(f"Prompt file loaded but is empty: {file_path}")
+             # Raise error if file is empty
+             raise ValueError(f"Prompt file loaded but is empty: {file_path}")
+        return content
+    except FileNotFoundError:
+         logger.error(f"Prompt file not found: {file_path}")
+         raise 
+    except Exception as e:
+         logger.error(f"Error reading prompt file {file_path}: {e}", exc_info=True)
+         raise
+
+def _resolve_models_for_config(target_agent_config: Dict[str, Any], 
+                             all_models_dict: Dict[str, Any]) -> None:
+    """Finds model_name refs in the target config and injects resolved model dicts.
+
+    Modifies target_agent_config in place.
+    Raises KeyError if a referenced model_name is not found in all_models_dict.
     """
-    Loads the main application settings and LLM model configurations.
-    Merges model provider details into the main settings under a 'resolved_llm_providers' key.
+    for agent_name, agent_details in target_agent_config.items():
+        # Skip non-dict items like helper_type
+        if not isinstance(agent_details, dict):
+             continue
+
+        # Resolve main model
+        model_name_value = agent_details.get('model_name')
+        if model_name_value:
+             if model_name_value in all_models_dict:
+                 agent_details['_resolved_llm_config'] = all_models_dict[model_name_value]
+             else:
+                 logger.error(f"Model name '{model_name_value}' referenced by agent '{agent_name}' not found in models file!")
+                 raise KeyError(f"Model name '{model_name_value}' not found in models file.")
+        
+        # Resolve helper model
+        helper_model_name_value = agent_details.get('helper_model_name')
+        if helper_model_name_value:
+            if helper_model_name_value in all_models_dict:
+                 agent_details['_resolved_llm_config_helper'] = all_models_dict[helper_model_name_value]
+            else:
+                logger.error(f"Helper model name '{helper_model_name_value}' referenced by agent '{agent_name}' not found in models file!")
+                raise KeyError(f"Helper model name '{helper_model_name_value}' not found in models file.")
+
+def load_app_config(settings_path: str = DEFAULT_SETTINGS_PATH, 
+                      models_path: str = DEFAULT_MODELS_PATH,
+                      run_config_name: str = "Default_NoHelper") -> Tuple[Dict, Dict, Dict]:
+    """
+    Loads debate settings, all prompt templates, and the specific agent
+    configuration for the run, resolving LLM model details.
 
     Args:
         settings_path: Path to the main settings YAML file.
         models_path: Path to the LLM models YAML file.
+        run_config_name: The name of the specific agent configuration to load and resolve.
 
     Returns:
-        A dictionary containing the combined configuration.
+        A tuple containing: (debate_settings_dict, resolved_agent_config_dict, prompt_templates_dict).
     """
     logger.info(f"Loading settings from: {settings_path}")
     logger.info(f"Loading models from: {models_path}")
+    logger.info(f"Target run configuration: '{run_config_name}'")
     
     settings_config = load_yaml_config(settings_path)
     models_config = load_yaml_config(models_path)
 
-    # Store the raw loaded configs
-    combined_config = {
-        "settings": settings_config,
-        "models": models_config
-    }
+    # 1. Extract global debate settings
+    debate_settings = settings_config['debate_settings']
     
-    # Resolve LLM references in agent configurations for easier access
-    # This adds the actual model provider dictionary to the agent config
-    resolved_llm_providers = models_config.get('llm_models', {})
-    combined_config['resolved_llm_providers'] = resolved_llm_providers
+    # 2. Load prompt templates using paths from debate_settings
+    prompt_paths = debate_settings['prompt_paths']
+    prompt_templates: Dict[str, str] = {}
+    logger.info("Loading prompt templates specified in settings...")
+    for key, path in prompt_paths.items():
+        content = _load_prompt(path)
+        prompt_templates[key] = content
+        logger.debug(f"Loaded prompt '{key}' from {path}")
+    logger.info("Prompt templates loaded successfully by config loader.")
 
-    agent_configs = settings_config.get('agent_configurations', {})
-    for run_name, run_config in agent_configs.items():
-        for agent_name, agent_details in run_config.items():
-            if isinstance(agent_details, dict):
-                llm_ref = agent_details.get('llm_config_ref')
-                if llm_ref and llm_ref in resolved_llm_providers:
-                    # Inject the resolved LLM provider config
-                    agent_details['_resolved_llm_config'] = resolved_llm_providers[llm_ref]
-                
-                # Resolve helper LLM ref if present
-                llm_ref_helper = agent_details.get('llm_config_ref_helper')
-                if llm_ref_helper and llm_ref_helper in resolved_llm_providers:
-                     agent_details['_resolved_llm_config_helper'] = resolved_llm_providers[llm_ref_helper]
+    # 3. Extract the dictionary of all available models
+    resolved_llm_providers = models_config['llm_models']
+    if not resolved_llm_providers:
+        logger.warning("No 'llm_models' defined in the models file.")
 
-    return combined_config
+    # 4. Extract the specific agent configuration for this run
+    agent_configs = settings_config['agent_configurations']
+    target_agent_config = agent_configs[run_config_name]
+                                        
+    # 5. Resolve and inject LLM configs into the target configuration using the helper
+    _resolve_models_for_config(target_agent_config, resolved_llm_providers)
+
+    # 6. Return the results as a tuple
+    logger.info("Configuration loading and resolution complete.")
+    return debate_settings, target_agent_config, prompt_templates
 

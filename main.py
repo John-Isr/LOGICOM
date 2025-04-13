@@ -1,9 +1,8 @@
-import os
 import sys
 import argparse
 import pandas as pd
 from tqdm import tqdm
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Union, List
 import logging
 
 # --- Direct Imports ---
@@ -13,11 +12,87 @@ from core.orchestrator import DebateOrchestrator
 from core.debate_setup import DebateInstanceSetup
 
 # Use colorama for terminal colors
-from colorama import init, Fore, Style
+from colorama import init
 init(autoreset=True)
 
 # Define logger at module level
 logger = logging.getLogger(__name__)
+
+# --- Helper Functions ---
+def _setup_logging():
+    """Configures application-wide logging."""
+    logging.basicConfig(
+        level=logging.DEBUG, # change from DEBUG to WARNING for regular runs
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    # Suppress noisy logs from underlying libraries
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("google.api_core").setLevel(logging.WARNING)
+    logger.info("Logging configured.")
+
+def _setup_api_keys():
+    """Sets API keys from the API_keys file."""
+    set_environment_variables_from_file(API_KEYS_PATH)
+
+# --- Helper to format prompts for a specific claim ---
+def format_prompts_for_claim(debate_settings: Dict[str, Any], 
+                               claim_data: pd.Series, 
+                               loaded_prompts: Dict[str, str]) -> Tuple[Dict[str, str], str, str]:
+    """Formats all loaded prompts using data from the current claim row.
+
+    Raises:
+        KeyError: If required keys are missing in debate_settings (mapping, column names)
+                  or in claim_data (data columns), or if placeholders missing in format string.
+    Returns:
+        Tuple containing (formatted_prompts_dict, topic_id_str, claim_text_str)
+    """
+    logger.debug("Formatting prompts for current claim...")
+    
+    # 1. Get config values needed for data extraction
+    mapping = debate_settings['column_mapping']
+    # Get column names from the mapping dictionary
+    topic_id_col_name = mapping['TOPIC_ID']
+    claim_col_name = mapping['CLAIM']
+    topic_col_name = mapping['TOPIC']
+    reason_col_name = mapping['REASON']
+
+    # 2. Extract required data using these column names
+    topic_id = str(claim_data[topic_id_col_name])
+    claim_text = str(claim_data[claim_col_name])
+    topic_text = str(claim_data[topic_col_name])
+    reason_text = str(claim_data[reason_col_name])
+
+    # 3. Build context dictionary with keys matching placeholders
+    str_context = {
+        "CLAIM": claim_text,
+        "TOPIC": topic_text,
+        "REASON": reason_text
+    }
+
+    # Debugging: Log the keys available right before formatting
+    logger.debug(f"Context keys available for formatting: {list(str_context.keys())}")
+
+    # 4. Format prompts by sequential replacement
+    formatted_prompts: Dict[str, str] = {}
+    for prompt_name, template_content in loaded_prompts.items():
+        formatted_string = template_content
+        for placeholder_key, value in str_context.items():
+            placeholder = "<" + placeholder_key + ">" # Construct placeholder like <CLAIM>
+            if placeholder in formatted_string:
+                formatted_string = formatted_string.replace(placeholder, value)
+        
+        formatted_prompts[prompt_name] = formatted_string
+        # Log if any replacements happened
+        if formatted_string != template_content:
+             logger.debug(f"Formatted prompt for prompt: {prompt_name}")
+        else:
+             logger.debug(f"No initial placeholders found for prompt: {prompt_name}")
+
+    logger.debug("Prompts formatted successfully.")
+    return formatted_prompts, topic_id, claim_text
 
 # --- Argument Parsing --- 
 def define_arguments() -> argparse.Namespace:
@@ -25,7 +100,7 @@ def define_arguments() -> argparse.Namespace:
     parser.add_argument("--config_run_name", default="Default_NoHelper", 
                         help="Name of the agent configuration section in settings.yaml to use.")
     parser.add_argument("--claim_index", type=int, default=None, 
-                        help="Index of the specific claim in the dataset to run (0-based). Runs all if not specified.")
+                        help="Index of the specific claim in the claims_file to run (0-based). Runs all if not specified.")
     parser.add_argument("--settings_path", default="./config/settings.yaml", 
                         help="Path to the main settings configuration file.")
     parser.add_argument("--models_path", default="./config/models.yaml", 
@@ -33,151 +108,139 @@ def define_arguments() -> argparse.Namespace:
     args = parser.parse_args()
     return args
 
+# --- New Helper Function to Run a Single Debate --- 
+def _run_single_debate(index: int, 
+                         claim_data: pd.Series, 
+                         debate_settings: Dict, 
+                         agent_config: Dict, 
+                         prompt_templates: Dict, 
+                         helper_type: str) -> Dict:
+    """Sets up and runs a single debate instance, handling errors."""
+    topic_id = "N/A"
+    run_result = {}
+    try:
+        # Format prompts for this claim (includes extracting topic_id, claim_text)
+        formatted_prompts, topic_id, claim_text = format_prompts_for_claim(debate_settings, claim_data, prompt_templates)
+
+        # Log start using extracted topic_id
+        logger.info(f"\n===== Preparing Claim Index: {index}, Topic ID: {topic_id} ====")
+
+        # Instantiate setup class for this claim
+        setup = DebateInstanceSetup(
+            agents_configuration=agent_config, 
+            debate_settings=debate_settings,
+            formatted_prompts=formatted_prompts
+        )
+
+        # Instantiate orchestrator 
+        orchestrator = DebateOrchestrator(
+            persuader=setup.persuader, 
+            debater=setup.debater,
+            moderator_terminator=setup.moderator_terminator,
+            moderator_topic_checker=setup.moderator_topic_checker,
+            max_rounds=int(debate_settings['max_rounds']),
+            turn_delay_seconds=float(debate_settings['turn_delay_seconds'])
+        )
+        
+        # Run debate
+        run_result_data = orchestrator.run_debate(
+            topic_id=topic_id, 
+            claim=claim_text, 
+            log_config=debate_settings,
+            helper_type=helper_type
+        )
+        # Combine orchestrator results with status/IDs
+        run_result = {
+             "topic_id": topic_id,
+             "claim_index": index,
+             "status": 'Success',
+             **run_result_data # Merge results from orchestrator
+        }
+
+    except Exception as e:
+        # Handle setup or runtime errors for this specific debate
+        current_topic_id = topic_id if topic_id != "N/A" else f"Index_{index}"
+        logger.error(f"!!!!! Error running debate for Topic ID {current_topic_id}: {e} !!!!!", exc_info=True)
+        run_result = {
+            "topic_id": current_topic_id,
+            "claim_index": index,
+            "status": "ERROR",
+            "error_message": str(e)
+        }
+    return run_result
+
+# --- New Helper Function to Summarize Results --- 
+def _summarize_results(results_summary: List[Dict]):
+    """Logs the summary of successful and failed debate runs."""
+    logger.info("\n===== Debate Run Summary ====")
+    successful_runs = [r for r in results_summary if r.get('status') == 'Success']
+    failed_runs = [r for r in results_summary if r.get('status') not in ['Success', None]] # Count ERROR and CONFIG_ERROR etc.
+    logger.info(f"Total Debates Attempted: {len(results_summary)}")
+    logger.info(f"Successful: {len(successful_runs)}")
+    logger.info(f"Failed: {len(failed_runs)}")
+    if failed_runs:
+         logger.warning("\nFailed Runs:")
+         for fail in failed_runs:
+              logger.warning(f"  Index: {fail.get('claim_index','N/A')}, Topic: {fail.get('topic_id','N/A')}, Status: {fail.get('status', 'UNKNOWN')}, Error: {fail.get('error_message','Unknown')}")
+
 # --- Main Execution Logic --- 
 def main():
     # --- Central Logging Configuration ---
-    logging.basicConfig(
-        level=logging.INFO, # Change from INFO to DEBUG if debug is needed
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    # --- Suppress noisy logs from underlying libraries ---
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("openai").setLevel(logging.WARNING)
-    logging.getLogger("google.api_core").setLevel(logging.WARNING)
-    # --------------------------------
+    _setup_logging()
     logger.info("Application starting...")
     # -----------------------------------
 
     args = define_arguments()
     
-    # Set API Keys from file  
-    set_environment_variables_from_file(API_KEYS_PATH)
+    _setup_api_keys()
 
     try:
-        # Load Configs
-        config = load_app_config(args.settings_path, args.models_path)
-        debate_settings = config['settings']['debate_settings']
-        run_config_name = args.config_run_name or "Default_NoHelper"
-        logger.info(f"Using agent run configuration: {run_config_name}")
-        agent_configs_for_run = config['settings']['agent_configurations'].get(run_config_name)
-        if not agent_configs_for_run:
-            logger.error(f"Run configuration '{run_config_name}' not found in settings.")
-            sys.exit(1)
-        helper_type_name = agent_configs_for_run.get('helper_type_name', run_config_name)
+        # Load configuration directly using the loader
+        logger.info(f"Loading configuration for run: '{args.config_run_name}'...")
+        debate_settings, agent_config, prompt_templates = load_app_config(
+            settings_path=args.settings_path,
+            models_path=args.models_path,
+            run_config_name=args.config_run_name
+        )
+        logger.info("Configuration loaded successfully.")
 
-        # Load dataset
-        data_path = debate_settings['data_path']
-        logger.info(f"Loading data from: {data_path}")
-        
-        # Check if the configured path exists directly
-        if not os.path.exists(data_path):
-             # If not, try resolving it relative to the project root (assuming main.py is in the root)
-             project_root = os.path.dirname(os.path.abspath(__file__))
-             alt_path_from_root = os.path.join(project_root, data_path.lstrip('./')) 
-             logger.info(f"Configured data path '{data_path}' not found. Trying relative to project root: '{alt_path_from_root}'")
-             if os.path.exists(alt_path_from_root):
-                  data_path = alt_path_from_root
-                  logger.info(f"Using alternative data path: {data_path}")
-             else:
-                  # Use f-string for clarity
-                  logger.error(f"Data file not found at specified path '{debate_settings['data_path']}' or relative to project root '{alt_path_from_root}'")
-                  sys.exit(1)
-        
-        # Proceed with loading now data_path is confirmed
-        data = pd.read_csv(data_path)
-        logger.info(f"Loaded {len(data)} claims.")
+        # Load claims data
+        claims_file_path = debate_settings['claims_file_path']
+        logger.info(f"Loading claim data from: {claims_file_path}")
+        claims_df = pd.read_csv(claims_file_path)
+        num_claims = len(claims_df)
+        logger.info(f"Loaded {num_claims} claims.")
 
         # Determine claims to run
-        claim_indices_to_run = []
         if args.claim_index is not None:
-            if 0 <= args.claim_index < len(data):
-                claim_indices_to_run = [args.claim_index]
-            else:
-                logger.error(f"Error: Invalid claim_index {args.claim_index}. Must be between 0 and {len(data)-1}.")
-                sys.exit(1)
+            logger.info(f"Running only for specified claim index: {args.claim_index}")
+            claim_indices_to_run = [args.claim_index]
         else:
-            claim_indices_to_run = list(range(len(data)))
-            logger.info(f"Running for all {len(claim_indices_to_run)} claims.")
+            logger.info(f"Running for all {num_claims} claims.")
+            claim_indices_to_run = list(range(num_claims))
 
-        # Load Initial Prompt Template
-        initial_prompt_path = debate_settings.get('initial_prompt_path')
-        if not initial_prompt_path: raise ValueError("initial_prompt_path missing in debate_settings.")
-        try:
-            with open(initial_prompt_path, 'r', encoding='utf-8') as f:
-                initial_prompt_template_content = f.read()
-            logger.info(f"Loaded initial prompt template from: {initial_prompt_path}")
-        except FileNotFoundError:
-             logger.critical(f"Initial prompt template file not found: {initial_prompt_path}. Exiting."); sys.exit(1)
-        except Exception as e:
-             logger.critical(f"Error reading initial prompt template {initial_prompt_path}: {e}", exc_info=True); sys.exit(1)
+        # Get helper type from the resolved config
+        helper_type = agent_config['helper_type']
 
         # --- Run Debates Loop --- 
         results_summary = []
-        topic_id_col = debate_settings.get('topic_id_column', 'id')
-        claim_col = debate_settings.get('claim_column', 'claim')
-
-        for index, claim_data in tqdm(data.iloc[claim_indices_to_run].iterrows(), total=len(claim_indices_to_run), desc="Running Debates"):
-            topic_id = str(claim_data.get(topic_id_col, index))
-            claim_text = str(claim_data.get(claim_col, ''))
-            if not claim_text: logger.warning(f"Skipping {topic_id} (Index {index}): empty claim."); continue
-
-            logger.info(f"\n===== Preparing Claim Index: {index}, Topic ID: {topic_id} ====")
-            run_result = {}
-            try:
-                # Instantiate setup class for this claim
-                setup = DebateInstanceSetup(
-                    agents_configuration=agent_configs_for_run,
-                    debate_settings=debate_settings,
-                    initial_prompt_template=initial_prompt_template_content, 
-                    claim_data=claim_data
-                    # Removed resolved_llm_providers/summarizer args
-                )
-
-                # Instantiate orchestrator 
-                orchestrator = DebateOrchestrator(
-                    persuader=setup.persuader, 
-                    debater=setup.debater,
-                    moderator_terminator=setup.moderator_terminator,
-                    moderator_topic_checker=setup.moderator_topic_checker,
-                    max_rounds=int(debate_settings.get('max_rounds', 12)),
-                    logger_instance=logger
-                )
-                
-                # Run debate
-                run_result = orchestrator.run_debate(
-                    topic_id=topic_id, claim=claim_text,
-                    log_config=debate_settings, 
-                    helper_type_name=helper_type_name
-                )
-                run_result['status'] = 'Success'
-
-            except Exception as e:
-                # Handle setup or runtime errors 
-                logger.error(f"!!!!! Error running debate for Topic ID {topic_id} (Index {index}): {e} !!!!!", exc_info=True)
-                run_result = {
-                    "topic_id": topic_id,
-                    "claim_index": index,
-                    "status": "ERROR",
-                    "error_message": str(e)
-                }
+        for index in tqdm(claim_indices_to_run, total=len(claim_indices_to_run), desc="Running Debates"):
+            claim_data = claims_df.iloc[index]
+            run_result = _run_single_debate(
+                index=index,
+                claim_data=claim_data,
+                debate_settings=debate_settings,
+                agent_config=agent_config,
+                prompt_templates=prompt_templates,
+                helper_type=helper_type
+            )
             results_summary.append(run_result)
 
         # --- Print Summary --- 
-        logger.info("\n===== Debate Run Summary ====")
-        successful_runs = [r for r in results_summary if r.get('status') == 'Success']
-        failed_runs = [r for r in results_summary if r.get('status') == 'ERROR']
-        logger.info(f"Total Debates Run: {len(results_summary)}")
-        logger.info(f"Successful: {len(successful_runs)}")
-        logger.info(f"Failed: {len(failed_runs)}")
-        if failed_runs:
-             logger.warning("\nFailed Runs:")
-             for fail in failed_runs:
-                  logger.warning(f"  Index: {fail.get('claim_index','N/A')}, Topic: {fail.get('topic_id','N/A')}, Error: {fail.get('error_message','Unknown')}")
+        _summarize_results(results_summary)
 
     except Exception as e:
-        logger.critical(f"\nAn unexpected error occurred in main execution: {e}", exc_info=True)
+        logger.critical(f"\nAn unexpected critical error occurred during setup or execution: {e}", exc_info=True)
         sys.exit(1)
 
 if __name__ == '__main__':

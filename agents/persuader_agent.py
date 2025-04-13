@@ -19,51 +19,43 @@ class PersuaderAgent(BaseAgent):
                  initial_prompt: str,
                  agent_name: str = "PersuaderAgent",
                  model_config: Optional[Dict[str, Any]] = None,
-                 prompt_wrapper_path: Optional[str] = None,
+                 prompt_wrapper: Optional[str] = None,
                  # Helper-specific components
                  use_helper_feedback: bool = False,
                  helper_llm_client: Optional[LLMInterface] = None,
-                 helper_prompt_wrapper_path: Optional[str] = None,
+                 helper_prompt_wrapper: Optional[str] = None,
                  helper_model_config: Optional[Dict[str, Any]] = None):
 
-        # Pass relevant args to BaseAgent, including wrapper path, main LLM client and memory
+        # Pass relevant args to BaseAgent, including prompt wrapper, main LLM client and memory
         super().__init__(llm_client=llm_client, memory=memory, agent_name=agent_name,
-                         model_config=model_config, prompt_wrapper_path=prompt_wrapper_path)
+                         model_config=model_config, prompt_wrapper=prompt_wrapper)
 
         # Store initial prompt directly
         self.initial_prompt = initial_prompt        
         self.use_helper_feedback = use_helper_feedback
         self.helper_llm_client = helper_llm_client
         self.helper_model_config = helper_model_config or {}
-        self._helper_template_content: Optional[str] = None
+        self._helper_template_content = helper_prompt_wrapper
         
-        # Read helper template content during init if helper is enabled
+        # Check helper template content if helper is enabled
         if self.use_helper_feedback:
-            if not helper_prompt_wrapper_path:
-                raise ValueError("Helper feedback enabled, but helper_prompt_wrapper_path is missing.")
-            try:
-                with open(helper_prompt_wrapper_path, 'r', encoding='utf-8') as f:
-                    self._helper_template_content = f.read()
-                if not self._helper_template_content:
-                    logger.error(f"Helper prompt template file is empty: {helper_prompt_wrapper_path}")
-                    raise ValueError("Helper prompt template file is empty.")
-                logger.info(f"Successfully loaded helper prompt template for {self.agent_name} from {helper_prompt_wrapper_path}")
-            except FileNotFoundError:
-                logger.error(f"Helper prompt template file not found: {helper_prompt_wrapper_path}")
-                raise
-            except Exception as e:
-                logger.error(f"Error reading helper prompt template file {helper_prompt_wrapper_path}: {e}", exc_info=True)
-                raise
+            if not self._helper_template_content:
+                # If helper enabled, the wrapper string MUST be provided
+                raise ValueError("Helper feedback enabled, but helper_prompt_wrapper string is missing or empty.")
+            else:
+                 logger.info(f"Helper prompt wrapper template provided for {self.agent_name}.")
 
         # Initialize helper token counters
         self.helper_prompt_tokens_used: int = 0
         self.helper_completion_tokens_used: int = 0
         self.helper_token_used: int = 0
 
-        # Validate helper setup if enabled
+        # Final validation: If helper is enabled, ensure client and template are present.
         if self.use_helper_feedback:
-            if not all([self.helper_llm_client, self._helper_template_content]):
-                raise ValueError("Helper feedback enabled, but helper LLM client or template content is missing/failed to load.")
+            if not self.helper_llm_client:
+                 raise ValueError("PersuaderAgent initialized with use_helper_feedback=True but helper_llm_client is None.")
+            if not self._helper_template_content:
+                 raise ValueError("PersuaderAgent initialized with use_helper_feedback=True but helper_prompt_wrapper string is missing or empty.")
 
     def reset(self) -> None:
         """Resets agent state including helper token counts."""
@@ -143,11 +135,19 @@ class PersuaderAgent(BaseAgent):
             raise RuntimeError("Helper LLM client or prompt template content not properly initialized.")
 
         history_string = self._format_history_for_helper(self.memory.get_history())
-        helper_vars = {
+        helper_template_context = {
             "ASSISTANT_RESPONSE": persuader_response,
             "HISTORY": history_string
         }
-        final_user_instruction = self._helper_template_content.format(**helper_vars)
+        
+        # Apply formatting using sequential replacement
+        formatted_instruction = self._helper_template_content
+        for placeholder_key, value in helper_template_context.items():
+            placeholder = "<" + placeholder_key + ">" # Construct <HISTORY>, <ASSISTANT_RESPONSE>
+            formatted_instruction = formatted_instruction.replace(placeholder, value)
+        
+        final_user_instruction = formatted_instruction # Use the fully replaced string
+
         helper_prompt_history = [{"role": "user", "content": final_user_instruction}]
 
         # Estimate helper prompt tokens
