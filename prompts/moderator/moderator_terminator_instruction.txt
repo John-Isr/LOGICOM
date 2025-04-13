@@ -7,7 +7,7 @@
 "Based on your analysis, output EXACTLY ONE of the following keywords and NOTHING ELSE:"
 
 "*   If condition 1 is met: `CONVINCED`"
-"*   If condition 2 is met: `TERMINATE_OTHER`"
+"*   If condition 2 is met: `TERMINATE`"
 "*   If neither condition 1 nor 2 is met: `CONTINUE`"
 
 "Your entire response MUST be one of those three uppercase keywords."
@@ -23,7 +23,7 @@
 "The Debater seems convinced, so: CONVINCED"
 
 "Example INCORRECT output:"
-"Based on the refusal, TERMINATE_OTHER"
+"Based on the refusal, TERMINATE"
 
 "Now, analyze the context and output ONLY the required keyword."
 

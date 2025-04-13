@@ -10,10 +10,9 @@ from colorama import Fore, Style
 # Direct imports from project structure
 from agents.persuader_agent import PersuaderAgent
 from agents.debater_agent import DebaterAgent
-from agents.moderator_agent import ModeratorAgent # For type hints
-from core.interfaces import MemoryInterface # For type hinting if needed
+from agents.moderator_agent import ModeratorAgent 
+from core.interfaces import MemoryInterface 
 from utils.log_debate import save_debate_log
-from core.interfaces import INTERNAL_USER_ROLE, INTERNAL_AI_ROLE # Import standard roles
 
 logger = logging.getLogger(__name__)
 
@@ -193,18 +192,18 @@ class DebateOrchestrator:
             "raw_response": termination_result
         })
         raw_text = termination_result.strip().upper()
-        if '<TERMINATE>' in raw_text:
+        if 'TERMINATE' in raw_text:
             logger.info("Parser found TERMINATE signal.")
             print(f"{self.MODERATOR_COLOR}Moderator Termination Check: TERMINATE.{self.RESET_ALL}")
             return False
         
-        elif '<KEEP-TALKING>' in raw_text:
-            logger.info("Parser found KEEP-TALKING signal.")
+        elif 'CONTINUE' in raw_text:
+            logger.info("Parser found CONTINUE signal.")
             print(f"{self.MODERATOR_COLOR}Moderator Termination Check: Continue debate.{self.RESET_ALL}")
             return True
-        
+                
         else: #TODO: Decide if this should be a warning or an error
-            logger.warning(f"Termination moderator returned unexpected response '{termination_result}'. Defaulting to KEEP-TALKING.")
+            logger.warning(f"Termination moderator returned unexpected response '{termination_result}'. Defaulting to CONTINUE.")
             return True
 
 
@@ -305,13 +304,3 @@ class DebateOrchestrator:
             return full_history[-count:]
         return full_history
 
-
-    # def reset_orchestrator(self):
-
-
-
-    # --- Moderator Response Parsing Methods --- 
-
-
-    # --- Removed _parse_moderator_tag_check --- 
-    # def _parse_moderator_tag_check(self, raw_response: str) -> bool:
