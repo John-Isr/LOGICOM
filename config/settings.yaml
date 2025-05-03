@@ -1,132 +1,176 @@
 # Example Main Configuration
 
 debate_settings:
-  data_path: ./claims/all-claim-not-claim.csv
-  # claim_number: 1 # This setting is unused, replaced by --claim_index CLI arg
-  claim_column: 'claim'
-  topic_id_column: 'id'
+  claims_file_path: ./claims/all-claim-not-claim.csv
   column_mapping: 
     TOPIC: "title"
     CLAIM: "claim"
     REASON: "reason"
-  initial_prompt_path: "prompts/persuader/initial_prompt.txt"
+    TOPIC_ID: "id"
+  # Centralized prompt file paths
+  prompt_paths:
+    # Persuader prompts
+    persuader_system: ./prompts/persuader/persuader_system_instruction.txt
+    persuader_wrapper: ./prompts/persuader/persuader_prompt_wrapper.txt
+    persuader_initial: ./prompts/persuader/initial_prompt.txt 
+    # Debater prompts
+    debater_system: ./prompts/debater/debater_system_instruction.txt
+    debater_wrapper: ./prompts/debater/debater_prompt_wrapper.txt
+    # Moderator prompts
+    moderator_terminator: ./prompts/moderator/moderator_terminator_instruction.txt
+    moderator_topic: ./prompts/moderator/moderator_topic_instruction.txt
+    # Helper prompts
+    helper_fallacy_system: ./prompts/helper/fallacy_system.txt
+    helper_fallacy_wrapper: ./prompts/helper/fallacy_wrapper.txt
+    helper_logical_system: ./prompts/helper/logical_system.txt
+    helper_logical_wrapper: ./prompts/helper/logical_wrapper.txt
+    # Memory summarizer prompt
+    memory_summarizer: ./prompts/memory/summary_instruction.txt 
 
   # Output Settings
   log_base_path: ./logs # Where to save debate logs 
-  log_formats: [json, html, txt, xlsx, clean] # Added 'clean' format option
+  log_formats: [json, html, txt, xlsx]
+  save_clean_logs: true # Whether to save clean logs (no metadata)
   # TODO: Add fallacy analysis output path option
   fallacy_csv_path: ./logs/fallacies.csv 
   
   # Debate Flow Control
-  max_rounds: 10 # Original safety stop
+  max_rounds: 12 
+  # Delay between turns
+  turn_delay_seconds: 1
   
   # Memory Management
   summarization_trigger_tokens: 6000 # Token threshold to trigger summarization
   target_prompt_tokens: 4000 # Target token limit for the prompt AFTER summarization
   keep_messages_after_summary: 4 # How many recent messages to keep alongside summary
-  summarizer_system_prompt_path: ./prompts/memory/summary_instruction.txt
 
 agent_configurations:
   Default_NoHelper:
-    helper_type_name: "No_Helper" 
+    helper_type: No_Helper
 
     persuader:
       # Reference to LLM config in models.yaml
-      llm_config_ref: gpt35_turbo
-      # Path to prompt template (relative)
-      system_instruction_path: ./prompts/persuader/persuader_system_instruction.txt
-      prompt_wrapper_path: ./prompts/persuader/persuader_prompt_wrapper.txt
+      model_name: gpt35_turbo
       model_config_override:
-        temperature: 1.0 
+        # temperature: 1.0 
         # presence_penalty: 0.0
         # frequency_penalty: 0.0
 
       # Helper Feedback Config 
       use_helper_feedback: false 
-      # Keep placeholders commented out when helper is not used
-      # llm_config_ref_helper: gpt35_turbo_0125 
-      # helper_system_prompt_path: ./prompts/helper/PLACEHOLDER_HELPER_SYSTEM.txt
-      # helper_prompt_wrapper_path: ./prompts/helper/PLACEHOLDER_HELPER_USER.txt
-      # helper_model_config_override: {}
+      helper_model_name: gpt35_turbo
+      helper_model_config_override: {}
 
     debater:
-      llm_config_ref: gpt35_turbo 
-      system_instruction_path: ./prompts/debater/debater_system_instruction.txt
-      prompt_wrapper_path: ./prompts/debater/debater_prompt_wrapper.txt
+      model_name: gpt35_turbo 
       model_config_override:
-        temperature: 1.0 
+        # temperature: 1.0 
         # presence_penalty: 0.0
         # frequency_penalty: 0.0
-      # evaluator_prompts: []
 
     moderator:
-      llm_config_ref: gemini_15_flash_8b 
-      # Paths based on original hardcoded names for PaLM/Gemini prompts
-      prompt_terminator_path: ./prompts/moderator/moderator_terminator_instruction.txt
-      prompt_topic_checker_path: ./prompts/moderator/moderator_topic_instruction.txt
-      # model_config_override: { temperature: 0.5 } # Gemini client default is 0.5
+      model_name: gemini_15_flash_8b 
 
   # --- Default with Fallacy Helper Enabled --- 
   Default_FallacyHelper:
-    helper_type_name: "Fallacy_Helper"
+    helper_type: Fallacy_Helper
 
     persuader:
       # Reference to LLM config in models.yaml
-      llm_config_ref: gpt35_turbo_0125
-      # Path to prompt template (relative)
-      system_instruction_path: ./prompts/persuader/persuader_system_instruction.txt
-      prompt_wrapper_path: ./prompts/persuader/persuader_prompt_wrapper.txt
+      model_name: gpt35_turbo
       model_config_override:
         temperature: 1.0 
 
       # Helper Feedback Config 
-      use_helper_feedback: true 
-      llm_config_ref_helper: gpt35_turbo_0125 # LLM for the helper
-      helper_system_prompt_path: ./prompts/helper/fallacy_system.txt 
-      helper_prompt_wrapper_path: ./prompts/helper/fallacy_wrapper.txt 
-      helper_model_config_override: {} # Optional overrides for helper LLM
+      helper_model_name: gpt35_turbo
+      helper_model_config_override: {} 
 
     debater:
-      llm_config_ref: gpt35_turbo_0125 
-      system_instruction_path: ./prompts/debater/debater_system_instruction.txt
-      prompt_wrapper_path: ./prompts/debater/debater_prompt_wrapper.txt
+      model_name: gpt35_turbo 
       model_config_override:
         temperature: 1.0 
 
     moderator:
-      llm_config_ref: gemini_15_flash_8b
-      prompt_terminator_path: ./prompts/moderator/moderator_terminator_instruction.txt
-      prompt_topic_checker_path: ./prompts/moderator/moderator_topic_instruction.txt
+      model_name: gemini_15_flash_8b
 
   # --- Default with Vanilla Helper Enabled --- 
   
   Default_LogicalHelper:
-    helper_type_name: "Logical_Helper"
+    helper_type: Logical_Helper
 
     persuader:
       # Reference to LLM config in models.yaml
-      llm_config_ref: gpt35_turbo_0125
-      # Path to prompt template (relative)
-      system_instruction_path: ./prompts/persuader/persuader_system_instruction.txt
-      prompt_wrapper_path: ./prompts/persuader/persuader_prompt_wrapper.txt
+      model_name: gpt35_turbo
       model_config_override:
         temperature: 1.0 
 
       # Helper Feedback Config 
-      use_helper_feedback: true 
-      llm_config_ref_helper: gpt35_turbo_0125 # LLM for the helper
-      helper_system_prompt_path: ./prompts/helper/logical_system.txt 
-      helper_prompt_wrapper_path: ./prompts/helper/logical_wrapper.txt 
-      helper_model_config_override: {} # Optional overrides for helper LLM
+      helper_model_name: gpt35_turbo 
+      helper_model_config_override: {} 
 
     debater:
-      llm_config_ref: gpt35_turbo_0125 
-      system_instruction_path: ./prompts/debater/debater_system_instruction.txt
-      prompt_wrapper_path: ./prompts/debater/debater_prompt_wrapper.txt
+      model_name: gpt35_turbo 
       model_config_override:
         temperature: 1.0 
 
     moderator:
-      llm_config_ref: gemini_15_flash_8b 
-      prompt_terminator_path: ./prompts/moderator/moderator_terminator_instruction.txt
-      prompt_topic_checker_path: ./prompts/moderator/moderator_topic_instruction.txt
+      model_name: gemini_15_flash_8b 
+
+  # --- Example Configuration using Local Gemma --- 
+  Local_Gemma_Test:
+    helper_type: No_Helper
+
+    persuader:
+      model_name: local_gemma_7b_4bit 
+      helper_model_name: local_gemma_7b_4bit
+      
+    debater:
+      model_name: local_gemma_7b_4bit 
+
+    moderator:
+      model_name: local_gemma_7b_4bit 
+
+  Local_Llama_Test:
+    helper_type: Fallacy_Helper
+
+    persuader:
+      model_name: local_llama31_8b_4bit 
+      helper_model_name: local_llama31_8b_4bit
+
+    debater:
+      model_name: local_llama31_8b_4bit 
+
+    moderator:
+      model_name: local_llama31_8b_4bit 
+
+  # --- Example Configuration using Local Mistral --- 
+  Local_Mistral_Test:
+    helper_type: No_Helper
+
+    persuader:
+      model_name: local_mistral_7b_instruct_4bit
+      helper_model_name: local_mistral_7b_instruct_4bit
+
+    debater:
+      model_name: local_mistral_7b_instruct_4bit
+
+    moderator:
+      model_name: local_mistral_7b_instruct_4bit
+
+  # --- Example Configuration using Local DeepSeek Coder --- 
+  Local_DeepSeekCoder_Test:
+    helper_type: No_Helper 
+
+    persuader:
+      model_name: local_deepseek_coder_6_7b_4bit
+      helper_model_name: local_deepseek_coder_6_7b_4bit
+
+    debater:
+      model_name: local_deepseek_coder_6_7b_4bit
+
+    moderator:
+      model_name: local_deepseek_coder_6_7b_4bit
+
+# End of agent_configurations
+
+# --- (Potentially other top-level settings below) ---

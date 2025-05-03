@@ -10,13 +10,11 @@ class ModeratorAgent(BaseAgent):
     def __init__(self,
                  llm_client: LLMInterface,
                  agent_name: str = "ModeratorCheckAgent", 
-                 model_config: Optional[Dict[str, Any]] = None,
-                 variables: Optional[Dict] = None):
+                 model_config: Optional[Dict[str, Any]] = None):
 
         # Pass None for memory to BaseAgent, since moderators don't need memory
         super().__init__(llm_client=llm_client, memory=None, agent_name=agent_name, model_config=model_config)
 
-        self.variables = variables or {}
 
 
     # Call method takes specific context needed for *this* check 
