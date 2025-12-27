@@ -22,6 +22,19 @@ from datetime import datetime
 import zipfile
 import signal
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import json
+
+# #region agent log
+log_path = r"c:\Users\gal40\OneDrive - Technion\Legacy_LOGICOM\new_logicom\LOGICOM\.cursor\debug.log"
+def debug_log(location, message, data=None, hypothesis_id=None):
+    try:
+        entry = {"sessionId": "debug-session", "runId": "run1", "location": location, "message": message, "timestamp": int(time.time() * 1000)}
+        if hypothesis_id: entry["hypothesisId"] = hypothesis_id
+        if data: entry["data"] = data
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except: pass
+# #endregion
 
 # Global flag for graceful shutdown
 interrupt_requested = False
@@ -29,12 +42,21 @@ interrupt_requested = False
 def signal_handler(signum, frame):
     """Handle interrupt signal (Ctrl+C) gracefully"""
     global interrupt_requested
+    # #region agent log
+    debug_log("multiple_runs.py:29", "Signal handler called", {"signum": signum, "interrupt_requested_before": interrupt_requested}, "A")
+    # #endregion
     if not interrupt_requested:
         print("\n⚠️  Interrupt received! Will stop after current debate finishes...")
         print("   Press Ctrl+C again to force quit immediately.")
         interrupt_requested = True
+        # #region agent log
+        debug_log("multiple_runs.py:35", "Interrupt flag set to True", {}, "A")
+        # #endregion
     else:
         print("\n🛑 Force quit requested!")
+        # #region agent log
+        debug_log("multiple_runs.py:38", "Force quit - exiting", {}, "A")
+        # #endregion
         sys.exit(1)
 
 
@@ -46,8 +68,8 @@ def main():
     
     parser.add_argument("--helper_types", nargs="+", 
                        help="List of helper types to run (default: all available)")
-    parser.add_argument("--claim_indexes", nargs="+", type=int,
-                       help="List of claim indexes to run (default: all claims)")
+    parser.add_argument("--claim_indexes", nargs="+", type=str,
+                       help="List of claim indexes to run. Can be individual numbers (e.g., 0 1 2) or ranges (e.g., 0-199). Default: all claims")
     parser.add_argument("--settings_path", default="./config/settings.yaml",
                        help="Path to settings YAML file")
     parser.add_argument("--models_path", default="./config/models.yaml", 
@@ -79,8 +101,14 @@ def main():
     
     # Clear any existing summary file to start fresh for this batch
     excel_file = "all_debates_summary.xlsx"
+    # #region agent log
+    debug_log("multiple_runs.py:81", "Checking Excel file before deletion", {"excel_file": excel_file, "exists": os.path.exists(excel_file)}, "E")
+    # #endregion
     if os.path.exists(excel_file):
         os.remove(excel_file)
+        # #region agent log
+        debug_log("multiple_runs.py:83", "Excel file deleted", {"excel_file": excel_file}, "E")
+        # #endregion
         print(f"Cleared existing {excel_file} for fresh start")
     
     # Get helper types to run
@@ -105,10 +133,36 @@ def main():
     runs = []
     total_runs = 0
     
-    # Always run sequentially by claim index when claim_indexes are specified
+    # Parse claim indexes (support both individual numbers and ranges like "0-199")
+    parsed_claim_indexes = []
     if args.claim_indexes:
+        for item in args.claim_indexes:
+            if '-' in item and item.count('-') == 1:
+                # Range format: "0-199"
+                try:
+                    start, end = map(int, item.split('-'))
+                    parsed_claim_indexes.extend(range(start, end + 1))
+                except ValueError:
+                    print(f"⚠️  Invalid range format: {item}. Expected format: start-end (e.g., 0-199)")
+                    return
+            else:
+                # Single number
+                try:
+                    parsed_claim_indexes.append(int(item))
+                except ValueError:
+                    print(f"⚠️  Invalid claim index: {item}. Must be a number or range (e.g., 0-199)")
+                    return
+        
+        # Remove duplicates and sort
+        parsed_claim_indexes = sorted(set(parsed_claim_indexes))
+        # #region agent log
+        debug_log("multiple_runs.py:137", "Parsed claim indexes", {"input": args.claim_indexes, "parsed_count": len(parsed_claim_indexes), "first": parsed_claim_indexes[0] if parsed_claim_indexes else None, "last": parsed_claim_indexes[-1] if parsed_claim_indexes else None}, "F")
+        # #endregion
+    
+    # Always run sequentially by claim index when claim_indexes are specified
+    if parsed_claim_indexes:
         # Run each claim with each helper type
-        for claim_index in args.claim_indexes:
+        for claim_index in parsed_claim_indexes:
             for helper_type in helper_types:
                 runs.append((helper_type, claim_index))
                 total_runs += 1
@@ -118,10 +172,18 @@ def main():
             runs.append((helper_type, None))  # None means all claims
             total_runs += 1
     
+    # #region agent log
+    debug_log("multiple_runs.py:165", "Runs created", {"total_runs": total_runs, "num_helper_types": len(helper_types), "claim_indexes_specified": parsed_claim_indexes is not None and len(parsed_claim_indexes) > 0, "num_claim_indexes": len(parsed_claim_indexes) if parsed_claim_indexes else 0, "max_workers": args.max_workers, "effective_parallelism": min(total_runs, args.max_workers)}, "F")
+    # #endregion
+    
     print(f"\nPlanning to run {total_runs} debate configurations:")
     for i, (helper_type, claim_index) in enumerate(runs, 1):
         claim_desc = f"claim {claim_index}" if claim_index is not None else "all claims"
         print(f"  {i}. {helper_type} - {claim_desc}")
+    
+    # #region agent log
+    debug_log("multiple_runs.py:154", "Parallelism analysis", {"total_runs": total_runs, "max_workers": args.max_workers, "will_run_simultaneously": min(total_runs, args.max_workers), "limited_by_runs": total_runs < args.max_workers}, "F")
+    # #endregion
     
     print(f"\nStarting runs...")
     
@@ -131,12 +193,21 @@ def main():
     start_time = time.time()
     
     # Always use parallel execution (use --max_workers 1 for sequential)
-    print(f"Running with {args.max_workers} worker{'s' if args.max_workers > 1 else ''}")
+    effective_workers = min(total_runs, args.max_workers)
+    print(f"Running with {args.max_workers} worker{'s' if args.max_workers > 1 else ''} (will run {effective_workers} simultaneously)")
+    if total_runs < args.max_workers:
+        print(f"⚠️  Note: Only {total_runs} run{'s' if total_runs == 1 else ''} created, so parallelism is limited to {total_runs} worker{'s' if total_runs == 1 else ''}")
     
+    # #region agent log
+    debug_log("multiple_runs.py:170", "Creating ProcessPoolExecutor", {"max_workers": args.max_workers, "total_runs": total_runs, "effective_workers": effective_workers}, "F")
+    # #endregion
     with ProcessPoolExecutor(max_workers=args.max_workers) as executor:
         # Submit all jobs
         future_to_run = {}
         for i, (helper_type, claim_index) in enumerate(runs, 1):
+            # #region agent log
+            debug_log("multiple_runs.py:140", "Submitting job", {"job_num": i, "helper_type": helper_type, "claim_index": claim_index}, "A")
+            # #endregion
             future = executor.submit(
                 run_single_debate,
                 helper_type,
@@ -151,13 +222,25 @@ def main():
         for future in as_completed(future_to_run):
             i, helper_type, claim_index = future_to_run[future]
             
+            # #region agent log
+            debug_log("multiple_runs.py:154", "Checking interrupt flag", {"interrupt_requested": interrupt_requested}, "A")
+            # #endregion
             if interrupt_requested:
                 print(f"\n🛑 Interrupt requested, cancelling remaining jobs...")
+                # #region agent log
+                debug_log("multiple_runs.py:156", "Shutting down executor", {"wait": False, "cancel_futures": True}, "A")
+                # #endregion
                 executor.shutdown(wait=False, cancel_futures=True)
                 break
             
             try:
+                # #region agent log
+                debug_log("multiple_runs.py:160", "Getting future result", {"helper_type": helper_type, "claim_index": claim_index}, "B")
+                # #endregion
                 success = future.result() # Get the return value from run_single_debate()
+                # #region agent log
+                debug_log("multiple_runs.py:160", "Future result received", {"success": success, "helper_type": helper_type, "claim_index": claim_index}, "B")
+                # #endregion
                 completed = successful_runs + failed_runs + 1
                 progress_pct = (completed / total_runs) * 100
                 
@@ -174,6 +257,9 @@ def main():
                 print(f"{status_icon} [{completed}/{total_runs}] ({progress_pct:.1f}%) {status_text}: {helper_type}{claim_desc}")
                 
             except Exception as e:
+                # #region agent log
+                debug_log("multiple_runs.py:176", "Exception in future.result()", {"error": str(e), "helper_type": helper_type, "claim_index": claim_index}, "B")
+                # #endregion
                 failed_runs += 1
                 completed = successful_runs + failed_runs
                 progress_pct = (completed / total_runs) * 100
@@ -199,15 +285,41 @@ def main():
     
     # Move Excel results to results directory
     excel_file = "all_debates_summary.xlsx"
+    lock_file = "all_debates_summary.xlsx.lock"
+    # #region agent log
+    debug_log("multiple_runs.py:201", "Checking Excel file before move", {"excel_file": excel_file, "exists": os.path.exists(excel_file), "lock_file": lock_file, "lock_exists": os.path.exists(lock_file)}, "D")
+    # #endregion
     if os.path.exists(excel_file):
         dest_excel = os.path.join(results_dir, "all_debates_summary.xlsx")
         try:
             shutil.move(excel_file, dest_excel)
+            # #region agent log
+            debug_log("multiple_runs.py:205", "Excel file moved successfully", {"dest": dest_excel}, "D")
+            # #endregion
             print(f"✓ Moved Excel results to: {dest_excel}")
         except Exception as e:
+            # #region agent log
+            debug_log("multiple_runs.py:208", "Failed to move Excel file", {"error": str(e)}, "D")
+            # #endregion
             print(f"✗ Failed to move Excel file: {e}")
     else:
+        # #region agent log
+        debug_log("multiple_runs.py:210", "Excel file not found", {"excel_file": excel_file}, "D")
+        # #endregion
         print(f"✗ Excel file not found: {excel_file}")
+    
+    # Clean up lock file if it exists
+    if os.path.exists(lock_file):
+        try:
+            os.remove(lock_file)
+            # #region agent log
+            debug_log("multiple_runs.py:217", "Lock file cleaned up", {"lock_file": lock_file}, "D")
+            # #endregion
+        except Exception as e:
+            # #region agent log
+            debug_log("multiple_runs.py:220", "Failed to remove lock file", {"error": str(e)}, "D")
+            # #endregion
+            print(f"⚠️  Warning: Could not remove lock file {lock_file}: {e}")
     
     # Save copy of settings.yaml for reproducibility
     if os.path.exists(args.settings_path):
@@ -328,6 +440,9 @@ def run_single_debate(helper_type: str, claim_index: Optional[int] = None,
     
     Returns True if successful, False if failed
     """
+    # #region agent log
+    debug_log("multiple_runs.py:315", "run_single_debate entry", {"helper_type": helper_type, "claim_index": claim_index, "debates_dir": debates_dir}, "C")
+    # #endregion
     cmd = [sys.executable, "main.py", "--helper_type", helper_type]
     
     if claim_index is not None:
@@ -342,20 +457,38 @@ def run_single_debate(helper_type: str, claim_index: Optional[int] = None,
     # Always pass the debates directory
     cmd.extend(["--debates_dir", debates_dir])
     
+    # #region agent log
+    debug_log("multiple_runs.py:345", "About to run subprocess", {"cmd": " ".join(cmd)}, "C")
+    # #endregion
     print(f"Running: {' '.join(cmd)}")
     
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=Path.cwd())
         
+        # #region agent log
+        debug_log("multiple_runs.py:348", "Subprocess completed", {"returncode": result.returncode, "stdout_length": len(result.stdout), "stderr_length": len(result.stderr)}, "C")
+        # #endregion
+        
         if result.returncode == 0:
+            # #region agent log
+            debug_log("multiple_runs.py:350", "Subprocess success", {"helper_type": helper_type, "claim_index": claim_index}, "C")
+            # #endregion
             print(f"✓ Success: {helper_type}" + (f" claim {claim_index}" if claim_index is not None else " all claims"))
             return True
         else:
+            # #region agent log
+            debug_log("multiple_runs.py:354", "Subprocess failed", {"returncode": result.returncode, "stderr_preview": result.stderr[:200] if result.stderr else None, "stdout_preview": result.stdout[:200] if result.stdout else None}, "B")
+            # #endregion
             print(f"✗ Failed: {helper_type}" + (f" claim {claim_index}" if claim_index is not None else " all claims"))
             print(f"Error: {result.stderr}")
+            if result.stdout:
+                print(f"Stdout: {result.stdout[:500]}")  # Print first 500 chars of stdout for debugging
             return False
             
     except Exception as e:
+        # #region agent log
+        debug_log("multiple_runs.py:358", "Exception in run_single_debate", {"error": str(e), "helper_type": helper_type, "claim_index": claim_index}, "B")
+        # #endregion
         print(f"✗ Exception running {helper_type}" + (f" claim {claim_index}" if claim_index is not None else " all claims") + f": {e}")
         return False
 if __name__ == "__main__":
