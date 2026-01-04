@@ -241,9 +241,11 @@ class DebateOrchestrator:
             logger.debug("Parser found KEEP-TALKING signal." , extra={"msg_type": "main debate", "sender": "moderator"})
             return True, "KEEP-TALKING"
                 
-        else: #TODO: Decide if this should be a warning or an error
-            logger.error(f"Termination moderator returned unexpected response '{termination_result}'. Defaulting to KEEP-TALKING." , extra={"msg_type": "main debate", "sender": "moderator"})
-            return True, "KEEP-TALKING"
+        else:
+            # Default to TERMINATE on unparseable responses (safer - prevents resource waste)
+            logger.error(f"Termination moderator returned unexpected response '{termination_result}'. Defaulting to TERMINATE for safety." , 
+                        extra={"msg_type": "main debate", "sender": "moderator"})
+            return False, "TERMINATE"
 
 
     def _run_topic_check(self, history: List[Dict[str, str]], moderator_logs: List[Dict[str, Any]]) -> Tuple[bool, str]:
@@ -293,29 +295,8 @@ class DebateOrchestrator:
         logger.debug(f"Conviction moderator raw response: '{conviction_result}'",
                    extra={"msg_type": "main debate", "sender": "moderator"})
         
-        conviction_rate = None
-        try:
-            import re
-            # Try multiple patterns in order of specificity
-            # Pattern 1: "Rate: 8" or "RATE:8"
-            rate_match = re.search(r'RATE:\s*(\d+)', raw_text)
-            if not rate_match:
-                # Pattern 2: "- 8" or dash followed by number
-                rate_match = re.search(r'-\s*(\d+)', raw_text)
-            if not rate_match:
-                # Pattern 3: Any standalone 1-2 digit number
-                rate_match = re.search(r'\b(\d{1,2})\b', raw_text)
-            
-            if rate_match:
-                conviction_rate = int(rate_match.group(1))
-                # Validate range 1-10
-                if conviction_rate < 1 or conviction_rate > 10:
-                    logger.warning(f"Conviction rate {conviction_rate} out of range 1-10, using None",
-                                 extra={"msg_type": "main debate", "sender": "moderator"})
-                    conviction_rate = None
-        except Exception as e:
-            logger.warning(f"Could not parse conviction rate from '{conviction_result}': {e}", 
-                         extra={"msg_type": "main debate", "sender": "moderator"})
+        # Parse conviction rate using helper
+        conviction_rate = self._parse_rate(conviction_result, "conviction rate")
         
         if 'CONVINCED' in raw_text and 'NOT-CONVINCED' not in raw_text:
             logger.debug(f"Parser found CONVINCED signal with rate {conviction_rate}.", 
@@ -328,6 +309,7 @@ class DebateOrchestrator:
             return False, conviction_rate
         
         else:
+            # Default to NOT-CONVINCED on unparseable responses (conservative - requires explicit conviction)
             logger.error(f"Conviction moderator returned unexpected response '{conviction_result}'. Defaulting to NOT-CONVINCED.", 
                        extra={"msg_type": "main debate", "sender": "moderator"})
             return False, conviction_rate
@@ -354,32 +336,11 @@ class DebateOrchestrator:
         logger.debug(f"Argument quality moderator raw response: '{argument_quality_result}'",
                    extra={"msg_type": "main debate", "sender": "moderator"})
         
-        argument_quality_rate = None
-        try:
-            import re
-            # Try multiple patterns in order of specificity
-            # Pattern 1: "Rate: 8" or "RATE:8"
-            rate_match = re.search(r'RATE:\s*(\d+)', raw_text)
-            if not rate_match:
-                # Pattern 2: "- 8" or dash followed by number
-                rate_match = re.search(r'-\s*(\d+)', raw_text)
-            if not rate_match:
-                # Pattern 3: Any standalone 1-2 digit number
-                rate_match = re.search(r'\b(\d{1,2})\b', raw_text)
-            
-            if rate_match:
-                argument_quality_rate = int(rate_match.group(1))
-                # Validate range 1-10
-                if argument_quality_rate < 1 or argument_quality_rate > 10:
-                    logger.warning(f"Argument quality rate {argument_quality_rate} out of range 1-10, using None",
-                                 extra={"msg_type": "main debate", "sender": "moderator"})
-                    argument_quality_rate = None
-                else:
-                    logger.debug(f"Parser found argument quality rate {argument_quality_rate}.",
-                               extra={"msg_type": "main debate", "sender": "moderator"})
-        except Exception as e:
-            logger.warning(f"Could not parse argument quality rate from '{argument_quality_result}': {e}", 
-                         extra={"msg_type": "main debate", "sender": "moderator"})
+        # Parse argument quality rate using helper
+        argument_quality_rate = self._parse_rate(argument_quality_result, "argument quality rate")
+        if argument_quality_rate is not None:
+            logger.debug(f"Parser found argument quality rate {argument_quality_rate}.",
+                       extra={"msg_type": "main debate", "sender": "moderator"})
         
         # Append moderation results to memories
         self._append_moderation_results_to_memories(persuader_memory, debater_memory, moderator_logs)
@@ -477,14 +438,18 @@ class DebateOrchestrator:
             import re
             raw_text = debate_quality_result.strip()
             
-            # Extract rating (look for "Rating: 8" or "RATING:8")
-            rate_match = re.search(r'RATING:\s*(\d+)', raw_text, re.IGNORECASE)
-            if rate_match:
-                debate_quality_rating = int(rate_match.group(1))
-                if debate_quality_rating < 1 or debate_quality_rating > 10:
-                    logger.warning(f"Debate quality rating {debate_quality_rating} out of range 1-10, using None",
-                                 extra={"msg_type": "main debate", "sender": "moderator"})
-                    debate_quality_rating = None
+            # Extract rating using helper (handles "Rating:" or "RATE:" patterns)
+            debate_quality_rating = self._parse_rate(debate_quality_result, "debate quality rating")
+            # Also try "RATING:" pattern specifically for debate quality
+            if debate_quality_rating is None:
+                rate_match = re.search(r'RATING:\s*(\d+)', raw_text, re.IGNORECASE)
+                if rate_match:
+                    rate = int(rate_match.group(1))
+                    if 1 <= rate <= 10:
+                        debate_quality_rating = rate
+                    else:
+                        logger.warning(f"Debate quality rating {rate} out of range 1-10, using None",
+                                     extra={"msg_type": "main debate", "sender": "moderator"})
             
             # Extract review (everything after "Review:" or "REVIEW:")
             review_match = re.search(r'REVIEW:\s*(.+?)(?:\n\n|\Z)', raw_text, re.IGNORECASE | re.DOTALL)
@@ -606,3 +571,34 @@ class DebateOrchestrator:
             return full_history[-count:]
         return full_history
 
+
+    def _parse_rate(self, text: str, rate_name: str = "rate") -> Optional[int]:
+        """Parse a rate (1-10) from moderator response text.
+        
+        Args:
+            text: The text to parse
+            rate_name: Name for logging (e.g., "conviction rate", "argument quality rate")
+            
+        Returns:
+            Integer 1-10 if found and valid, None otherwise
+        """
+        raw_text = text.strip().upper()
+        try:
+            # Try multiple patterns in order of specificity
+            rate_match = re.search(r'RATE:\s*(\d+)', raw_text)
+            if not rate_match:
+                rate_match = re.search(r'-\s*(\d+)', raw_text)
+            if not rate_match:
+                rate_match = re.search(r'\b(\d{1,2})\b', raw_text)
+            
+            if rate_match:
+                rate = int(rate_match.group(1))
+                if 1 <= rate <= 10:
+                    return rate
+                else:
+                    logger.warning(f"{rate_name.capitalize()} {rate} out of range 1-10, using None",
+                                 extra={"msg_type": "main debate", "sender": "moderator"})
+        except Exception as e:
+            logger.warning(f"Could not parse {rate_name} from '{text}': {e}", 
+                         extra={"msg_type": "main debate", "sender": "moderator"})
+        return None
