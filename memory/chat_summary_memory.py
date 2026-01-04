@@ -113,6 +113,16 @@ class ChatSummaryMemory(MemoryInterface):
         """Returns the list of argument quality rates collected during the conversation."""
         return self.argument_quality_rates.copy()
 
+    def update_last_argument_quality_rate(self, rate: Optional[int]) -> None:
+        """Updates the argument quality rate for the most recent AI message."""
+        if len(self.argument_quality_rates) > 0:
+            self.argument_quality_rates[-1] = rate
+
+    def update_last_conviction_rate(self, rate: Optional[int]) -> None:
+        """Updates the conviction rate for the most recent AI message."""
+        if len(self.conviction_rates) > 0:
+            self.conviction_rates[-1] = rate
+
     def _check_context_length(self) -> None:
         """Checks token count and triggers summarization if trigger threshold is exceeded."""
         # Allow disabling summarization via trigger_tokens <= 0

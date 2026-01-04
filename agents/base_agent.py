@@ -163,4 +163,14 @@ class BaseAgent(AgentInterface):
         if self.memory:
             return self.memory.get_last_ai_message()
         else:
-            raise AttributeError(f"Cannot get last response from agent '{self.agent_name}': Memory is not configured.") 
+            raise AttributeError(f"Cannot get last response from agent '{self.agent_name}': Memory is not configured.")
+
+    def update_argument_quality_rate(self, rate: Optional[int]) -> None:
+        """Updates the argument quality rate for the most recent AI message."""
+        if self.memory:
+            self.memory.update_last_argument_quality_rate(rate)
+
+    def update_conviction_rate(self, rate: Optional[int]) -> None:
+        """Updates the conviction rate for the most recent AI message."""
+        if self.memory:
+            self.memory.update_last_conviction_rate(rate) 

@@ -83,16 +83,14 @@ class DebateOrchestrator:
             # Check argument quality
             argument_quality_rate = self._run_argument_quality_check(persuader_memory=self.persuader.memory, debater_memory=self.debater.memory)
             
-            # Update the argument quality rate for the persuader's most recent message - TODO:: decide if save it differently
-            if hasattr(self.persuader.memory, 'argument_quality_rates') and len(self.persuader.memory.argument_quality_rates) > 0:
-                self.persuader.memory.argument_quality_rates[-1] = argument_quality_rate
+            # Update the argument quality rate for the persuader's most recent message
+            self.persuader.update_argument_quality_rate(argument_quality_rate)
             
             # Check if debater was convinced after their response and get conviction rate
             is_convinced, conviction_rate = self._run_conviction_check(debater_response=debater_response, debater_memory=self.debater.memory)
             
-            # Update the conviction rate for the debater's most recent message - TODO:: decide if save it differently
-            if hasattr(self.debater.memory, 'conviction_rates') and len(self.debater.memory.conviction_rates) > 0:
-                self.debater.memory.conviction_rates[-1] = conviction_rate
+            # Update the conviction rate for the debater's most recent message
+            self.debater.update_conviction_rate(conviction_rate)
 
 
             if is_convinced:

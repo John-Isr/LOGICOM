@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Optional
 from enum import Enum
 
 # --- Internal Standard Role Names ---
@@ -79,6 +79,16 @@ class MemoryInterface(ABC):
     @abstractmethod
     def get_argument_quality_rates(self) -> List[Any]:
         """Returns the list of argument quality rates collected during the conversation."""
+        pass
+
+    @abstractmethod
+    def update_last_argument_quality_rate(self, rate: Optional[int]) -> None:
+        """Updates the argument quality rate for the most recent AI message."""
+        pass
+
+    @abstractmethod
+    def update_last_conviction_rate(self, rate: Optional[int]) -> None:
+        """Updates the conviction rate for the most recent AI message."""
         pass
 
 
