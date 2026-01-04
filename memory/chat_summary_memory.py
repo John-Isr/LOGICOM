@@ -29,6 +29,9 @@ class ChatSummaryMemory(MemoryInterface):
         self.completion_tokens_used: int = 0
         self.total_tokens_used: int = 0
         
+        # Cache for current messages token count (invalidated when messages change)
+        self._cached_token_count: Optional[int] = None
+        
         # Persistent feedback tags storage (survives summarization)
         self.feedback_tags: List[Optional[str]] = []
         
@@ -44,6 +47,7 @@ class ChatSummaryMemory(MemoryInterface):
         entry = {"role": INTERNAL_USER_ROLE, "content": message}
         self.messages.append(entry)
         self.log.append({"type": "message", "data": deepcopy(entry)})
+        self._cached_token_count = None  # Invalidate cache
         self._check_context_length()
 
     def add_ai_message(self, message: str, **kwargs) -> None:
@@ -65,6 +69,7 @@ class ChatSummaryMemory(MemoryInterface):
         argument_quality_rate = kwargs.get('argument_quality_rate')
         self.argument_quality_rates.append(argument_quality_rate)
         
+        self._cached_token_count = None  # Invalidate cache
         self._check_context_length()
 
     def get_history_as_prompt(self) -> List[Dict[str, str]]:
@@ -92,6 +97,7 @@ class ChatSummaryMemory(MemoryInterface):
         self.prompt_tokens_used = 0
         self.completion_tokens_used = 0
         self.total_tokens_used = 0
+        self._cached_token_count = None
 
     def get_token_usage(self) -> Dict[str, int]:
         """Returns the token usage by memory operations (primarily summarization)."""
@@ -129,8 +135,11 @@ class ChatSummaryMemory(MemoryInterface):
         if self.summarization_trigger_tokens <= 0:
             logger.debug("Summarization trigger token limit is 0 or less. Skipping context length check.", extra={"msg_type": "memory_operation"})
             return
-            
-        current_tokens = calculate_chat_tokens(self.messages)
+        
+        # Use cached token count if available, otherwise calculate and cache
+        if self._cached_token_count is None:
+            self._cached_token_count = calculate_chat_tokens(self.messages)
+        current_tokens = self._cached_token_count
         logger.debug(f"Current prompt token count estimate: {current_tokens}", extra={"msg_type": "memory_operation"})
 
         # Trigger based on summarization_trigger_tokens
@@ -188,8 +197,9 @@ class ChatSummaryMemory(MemoryInterface):
                 "data": {"summary": summary, "messages_summarized": len(messages_to_summarize)}, 
                 "context_injection": summary_content
             })
-            new_token_count = calculate_chat_tokens(self.messages)
-            logger.info(f"History summarized. New token count estimate: {new_token_count}", extra={"msg_type": "memory_operation"})
+            # Recalculate and cache token count after summarization
+            self._cached_token_count = calculate_chat_tokens(self.messages)
+            logger.info(f"History summarized. New token count estimate: {self._cached_token_count}", extra={"msg_type": "memory_operation"})
         else:
             # Handle case where generate() succeeded but returned None or empty string
 
