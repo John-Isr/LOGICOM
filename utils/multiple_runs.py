@@ -99,8 +99,8 @@ def main():
     os.makedirs(debates_folder, exist_ok=True)
     print(f"Using debates directory: {debates_folder}")
     
-    # Clear any existing summary file to start fresh for this batch
-    excel_file = "all_debates_summary.xlsx"
+    # Clear any existing summary file in results directory to start fresh for this batch
+    excel_file = os.path.join(results_dir, "all_debates_summary.xlsx")
     # #region agent log
     debug_log("multiple_runs.py:81", "Checking Excel file before deletion", {"excel_file": excel_file, "exists": os.path.exists(excel_file)}, "E")
     # #endregion
@@ -214,7 +214,8 @@ def main():
                 claim_index,
                 args.settings_path,
                 args.models_path,
-                debates_folder
+                debates_folder,
+                args.run_name
             )
             future_to_run[future] = (i, helper_type, claim_index)
         
@@ -283,32 +284,15 @@ def main():
     
     time.sleep(3) # Make sure all processes are finished
     
-    # Move Excel results to results directory
-    excel_file = "all_debates_summary.xlsx"
-    lock_file = "all_debates_summary.xlsx.lock"
-    # #region agent log
-    debug_log("multiple_runs.py:201", "Checking Excel file before move", {"excel_file": excel_file, "exists": os.path.exists(excel_file), "lock_file": lock_file, "lock_exists": os.path.exists(lock_file)}, "D")
-    # #endregion
+    # Excel file is already saved in results_dir by subprocesses, no need to move
+    excel_file = os.path.join(results_dir, "all_debates_summary.xlsx")
     if os.path.exists(excel_file):
-        dest_excel = os.path.join(results_dir, "all_debates_summary.xlsx")
-        try:
-            shutil.move(excel_file, dest_excel)
-            # #region agent log
-            debug_log("multiple_runs.py:205", "Excel file moved successfully", {"dest": dest_excel}, "D")
-            # #endregion
-            print(f"✓ Moved Excel results to: {dest_excel}")
-        except Exception as e:
-            # #region agent log
-            debug_log("multiple_runs.py:208", "Failed to move Excel file", {"error": str(e)}, "D")
-            # #endregion
-            print(f"✗ Failed to move Excel file: {e}")
+        print(f"✓ Excel results saved to: {excel_file}")
     else:
-        # #region agent log
-        debug_log("multiple_runs.py:210", "Excel file not found", {"excel_file": excel_file}, "D")
-        # #endregion
-        print(f"✗ Excel file not found: {excel_file}")
+        print(f"⚠️  Excel file not found at: {excel_file}")
     
     # Clean up lock file if it exists
+    lock_file = excel_file + ".lock"
     if os.path.exists(lock_file):
         try:
             os.remove(lock_file)
@@ -427,7 +411,8 @@ def create_results_directory(run_name: str) -> str:
 def run_single_debate(helper_type: str, claim_index: Optional[int] = None, 
                      settings_path: str = "./config/settings.yaml",
                      models_path: str = "./config/models.yaml",
-                     debates_dir: str = "debates") -> bool:
+                     debates_dir: str = "debates",
+                     run_name: str = None) -> bool:
     """
     Run a single debate by calling main.py
     
@@ -436,14 +421,19 @@ def run_single_debate(helper_type: str, claim_index: Optional[int] = None,
         claim_index: Specific claim to run (None for all claims)
         settings_path: Path to settings.yaml
         models_path: Path to models.yaml
-        debates_dir: Directory where debate logs should be saved
+        debates_dir: Directory where debate logs should be saved (format: results/<timestamp>_<run_name>/debates)
+        run_name: Name of the run (used for main.py --run_name argument)
     
     Returns True if successful, False if failed
     """
     # #region agent log
-    debug_log("multiple_runs.py:315", "run_single_debate entry", {"helper_type": helper_type, "claim_index": claim_index, "debates_dir": debates_dir}, "C")
+    debug_log("multiple_runs.py:315", "run_single_debate entry", {"helper_type": helper_type, "claim_index": claim_index, "debates_dir": debates_dir, "run_name": run_name}, "C")
     # #endregion
-    cmd = [sys.executable, "main.py", "--helper_type", helper_type]
+    
+    # Extract results_dir from debates_dir (debates_dir is results/<timestamp>_<run_name>/debates)
+    results_dir = os.path.dirname(debates_dir)
+    
+    cmd = [sys.executable, "main.py", "--run_name", run_name, "--helper_type", helper_type, "--results_dir", results_dir]
     
     if claim_index is not None:
         cmd.extend(["--claim_index", str(claim_index)])
@@ -453,9 +443,6 @@ def run_single_debate(helper_type: str, claim_index: Optional[int] = None,
         
     if models_path != "./config/models.yaml":
         cmd.extend(["--models_path", models_path])
-    
-    # Always pass the debates directory
-    cmd.extend(["--debates_dir", debates_dir])
     
     # #region agent log
     debug_log("multiple_runs.py:345", "About to run subprocess", {"cmd": " ".join(cmd)}, "C")

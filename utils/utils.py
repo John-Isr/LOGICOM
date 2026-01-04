@@ -48,7 +48,7 @@ def create_debate_directory(topic_id, chat_id, helper_type, debates_base_dir="de
 
 def save_debate_in_excel(topic_id, claim_data, helper_type, chat_id, result, rounds, finish_reason="", 
                          conviction_rates=None, feedback_tags=None, argument_quality_rates=None,
-                         debate_quality_rating=None, debate_quality_review=None):
+                         debate_quality_rating=None, debate_quality_review=None, excel_file_path=None):
     """
     Save debate results to a central Excel file.
     Creates the file if it doesn't exist, otherwise appends to it.
@@ -66,12 +66,13 @@ def save_debate_in_excel(topic_id, claim_data, helper_type, chat_id, result, rou
         argument_quality_rates: List of argument quality rates per round (optional)
         debate_quality_rating: Overall debate quality rating 1-10 (optional)
         debate_quality_review: Professional review of debate quality (optional)
+        excel_file_path: Path to Excel file (default: "all_debates_summary.xlsx" in current directory)
         
     Returns:
         bool: True if successful, False otherwise
     """
-    excel_file = "all_debates_summary.xlsx"
-    lock_file = "all_debates_summary.xlsx.lock"
+    excel_file = excel_file_path if excel_file_path else "all_debates_summary.xlsx"
+    lock_file = excel_file + ".lock"
     
     # Use file lock to ensure only one process writes at a time
     lock = FileLock(lock_file, timeout=30)

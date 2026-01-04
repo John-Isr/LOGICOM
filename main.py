@@ -6,6 +6,8 @@ from tqdm import tqdm
 from typing import Dict, Any, Optional, Tuple, Union, List
 import json
 import logging.config
+from datetime import datetime
+import os
 
 # --- Direct Imports ---
 from utils.log_main import logger as debate_logger, setup_logging 
@@ -88,6 +90,8 @@ def format_prompts_for_claim(debate_settings: Dict[str, Any],
 # --- Argument Parsing --- 
 def define_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run AI Debates with Reworked Architecture")
+    parser.add_argument("--run_name", required=True,
+                        help="Name for this run (will be combined with timestamp for results folder)")
     parser.add_argument("--helper_type", default="Default_No_Helper", 
                         help="Name of the helper type configuration in settings.yaml to use.")
     parser.add_argument("--claim_index", type=int, default=None, 
@@ -98,8 +102,8 @@ def define_arguments() -> argparse.Namespace:
                         help="Path to the LLM models configuration file.")
     parser.add_argument("--max_rounds", type=int, default=None,
                         help="Override the maximum number of debate rounds (default is from settings.yaml)")
-    parser.add_argument("--debates_dir", default="debates",
-                        help="Directory where debate logs should be saved (default: debates)")
+    parser.add_argument("--results_dir", default=None,
+                        help="Path to results directory (default: creates results/<timestamp>_<run_name>/)")
     args = parser.parse_args()
     return args
 
@@ -110,7 +114,8 @@ def _run_single_debate(index: int,
                          agent_config: Dict, 
                          prompt_templates: Dict, 
                          helper_type: str,
-                         debates_base_dir: str = "debates") -> Dict:
+                         debates_base_dir: str = "debates",
+                         excel_file_path: str = None) -> Dict:
     """Sets up and runs a single debate instance, handling errors."""
     topic_id = "N/A"
     run_result = {}
@@ -202,7 +207,8 @@ def _run_single_debate(index: int,
             feedback_tags,
             argument_quality_rates,
             debate_quality_rating,
-            debate_quality_review
+            debate_quality_review,
+            excel_file_path=excel_file_path
         )
         if excel_success:
             logger.info(f"Successfully saved debate summary to Excel", extra={"msg_type": "system"})
@@ -237,7 +243,8 @@ def _run_single_debate(index: int,
                 rounds=0,
                 finish_reason=error_finish_reason,
                 conviction_rates=[],
-                feedback_tags=[]
+                feedback_tags=[],
+                excel_file_path=excel_file_path
             )
             if excel_success:
                 logger.info(f"Successfully saved error to Excel with result code -1", extra={"msg_type": "system"})
@@ -279,6 +286,24 @@ def main():
     args = define_arguments()
     
     _setup_api_keys()
+
+    # Determine results directory
+    if args.results_dir:
+        # Use provided results directory (from multiple_runs.py)
+        results_dir = args.results_dir
+    else:
+        # Create new results directory for manual run
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        results_base = "results"
+        if not os.path.exists(results_base):
+            os.makedirs(results_base)
+        results_dir = os.path.join(results_base, f"{timestamp}_{args.run_name}")
+        os.makedirs(results_dir, exist_ok=True)
+        print(f"Created results directory: {results_dir}")
+    
+    # Set debates and Excel paths based on results directory
+    debates_dir = os.path.join(results_dir, "debates")
+    excel_file_path = os.path.join(results_dir, "all_debates_summary.xlsx")
 
     try:
         # Load configuration directly using the loader
@@ -325,7 +350,8 @@ def main():
                 agent_config=agent_config,
                 prompt_templates=prompt_templates,
                 helper_type=helper_type,
-                debates_base_dir=args.debates_dir
+                debates_base_dir=debates_dir,
+                excel_file_path=excel_file_path
             )
             # results_summary.append(run_result)
 
