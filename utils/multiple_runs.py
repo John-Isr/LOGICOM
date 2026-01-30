@@ -46,14 +46,14 @@ def signal_handler(signum, frame):
     debug_log("multiple_runs.py:29", "Signal handler called", {"signum": signum, "interrupt_requested_before": interrupt_requested}, "A")
     # #endregion
     if not interrupt_requested:
-        print("\n⚠️  Interrupt received! Will stop after current debate finishes...")
+        print("\n  Interrupt received! Will stop after current debate finishes...")
         print("   Press Ctrl+C again to force quit immediately.")
         interrupt_requested = True
         # #region agent log
         debug_log("multiple_runs.py:35", "Interrupt flag set to True", {}, "A")
         # #endregion
     else:
-        print("\n🛑 Force quit requested!")
+        print("\n Force quit requested!")
         # #region agent log
         debug_log("multiple_runs.py:38", "Force quit - exiting", {}, "A")
         # #endregion
@@ -143,14 +143,14 @@ def main():
                     start, end = map(int, item.split('-'))
                     parsed_claim_indexes.extend(range(start, end + 1))
                 except ValueError:
-                    print(f"⚠️  Invalid range format: {item}. Expected format: start-end (e.g., 0-199)")
+                    print(f"  Invalid range format: {item}. Expected format: start-end (e.g., 0-199)")
                     return
             else:
                 # Single number
                 try:
                     parsed_claim_indexes.append(int(item))
                 except ValueError:
-                    print(f"⚠️  Invalid claim index: {item}. Must be a number or range (e.g., 0-199)")
+                    print(f"  Invalid claim index: {item}. Must be a number or range (e.g., 0-199)")
                     return
         
         # Remove duplicates and sort
@@ -159,17 +159,15 @@ def main():
         debug_log("multiple_runs.py:137", "Parsed claim indexes", {"input": args.claim_indexes, "parsed_count": len(parsed_claim_indexes), "first": parsed_claim_indexes[0] if parsed_claim_indexes else None, "last": parsed_claim_indexes[-1] if parsed_claim_indexes else None}, "F")
         # #endregion
     
-    # Always run sequentially by claim index when claim_indexes are specified
-    if parsed_claim_indexes:
-        # Run each claim with each helper type
-        for claim_index in parsed_claim_indexes:
-            for helper_type in helper_types:
-                runs.append((helper_type, claim_index))
-                total_runs += 1
-    else:
-        # Run all claims for each helper type
+    # If no claim indexes specified, run all 200 claims
+    if not parsed_claim_indexes:
+        parsed_claim_indexes = list(range(200))  # 0 to 199
+        print(f"No claim indexes specified, using all 200 claims (0-199)")
+    
+    # Create individual jobs for each (helper_type, claim_index) combination
+    for claim_index in parsed_claim_indexes:
         for helper_type in helper_types:
-            runs.append((helper_type, None))  # None means all claims
+            runs.append((helper_type, claim_index))
             total_runs += 1
     
     # #region agent log
@@ -196,7 +194,7 @@ def main():
     effective_workers = min(total_runs, args.max_workers)
     print(f"Running with {args.max_workers} worker{'s' if args.max_workers > 1 else ''} (will run {effective_workers} simultaneously)")
     if total_runs < args.max_workers:
-        print(f"⚠️  Note: Only {total_runs} run{'s' if total_runs == 1 else ''} created, so parallelism is limited to {total_runs} worker{'s' if total_runs == 1 else ''}")
+        print(f"  Note: Only {total_runs} run{'s' if total_runs == 1 else ''} created, so parallelism is limited to {total_runs} worker{'s' if total_runs == 1 else ''}")
     
     # #region agent log
     debug_log("multiple_runs.py:170", "Creating ProcessPoolExecutor", {"max_workers": args.max_workers, "total_runs": total_runs, "effective_workers": effective_workers}, "F")
@@ -277,7 +275,7 @@ def main():
     print(f"Planned runs: {total_runs}")
     print(f"Completed runs: {completed_runs}")
     if interrupt_requested:
-        print(f"⚠️  Run interrupted by user ({total_runs - completed_runs} runs skipped)")
+        print(f"  Run interrupted by user ({total_runs - completed_runs} runs skipped)")
     print(f"Successful: {successful_runs}")
     print(f"Failed: {failed_runs}")
     print(f"Time elapsed: {elapsed_time:.1f} seconds")
@@ -289,7 +287,7 @@ def main():
     if os.path.exists(excel_file):
         print(f"✓ Excel results saved to: {excel_file}")
     else:
-        print(f"⚠️  Excel file not found at: {excel_file}")
+        print(f"  Excel file not found at: {excel_file}")
     
     # Clean up lock file if it exists
     lock_file = excel_file + ".lock"
@@ -303,40 +301,79 @@ def main():
             # #region agent log
             debug_log("multiple_runs.py:220", "Failed to remove lock file", {"error": str(e)}, "D")
             # #endregion
-            print(f"⚠️  Warning: Could not remove lock file {lock_file}: {e}")
+            print(f"  Warning: Could not remove lock file {lock_file}: {e}")
     
     # Save copy of settings.yaml for reproducibility
+    # IMPORTANT: Copy BEFORE any runs start, so we capture the exact settings used
     if os.path.exists(args.settings_path):
         dest_settings = os.path.join(results_dir, "settings.yaml")
         try:
             shutil.copy2(args.settings_path, dest_settings)
             print(f"✓ Saved settings copy to: {dest_settings}")
+            
+            # Verify the copy and log what prompts are configured
+            try:
+                copied_config = load_config(dest_settings)
+                prompt_paths = copied_config.get('debate_settings', {}).get('prompt_paths', {})
+                print(f"  Settings file contains {len(prompt_paths)} prompt paths")
+                # Check if custom paths are being used
+                custom_paths = [k for k, v in prompt_paths.items() if '35_35_testhelper' in str(v) or 'testhelper' in str(v)]
+                if custom_paths:
+                    print(f"  Found custom prompt paths: {', '.join(custom_paths)}")
+            except Exception as e:
+                print(f"  Warning: Could not verify settings file contents: {e}")
         except Exception as e:
             print(f"✗ Failed to copy settings file: {e}")
     else:
         print(f"✗ Settings file not found: {args.settings_path}")
-    # Create ZIP archive of prompts folder (for reproducibility)
-    prompts_folder = "prompts"
-    if os.path.exists(prompts_folder):
-        prompts_zip = os.path.join(results_dir, "prompts.zip")
-        try:
-            with zipfile.ZipFile(prompts_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+    
+    # Create ZIP archive of ACTUAL prompts used (from settings file) for reproducibility
+    prompts_zip = os.path.join(results_dir, "prompts.zip")
+    try:
+        # Load settings to get actual prompt paths
+        settings_config = load_config(args.settings_path)
+        prompt_paths = settings_config.get('debate_settings', {}).get('prompt_paths', {})
+        
+        with zipfile.ZipFile(prompts_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            archived_files = set()
+            
+            # Archive all prompts specified in settings
+            for prompt_key, prompt_path in prompt_paths.items():
+                if os.path.exists(prompt_path):
+                    # Get absolute path and normalize
+                    abs_path = os.path.abspath(prompt_path)
+                    # Store with relative path from project root
+                    arcname = os.path.relpath(prompt_path, '.')
+                    zipf.write(prompt_path, arcname)
+                    archived_files.add(abs_path)
+                    print(f"  Archived prompt '{prompt_key}': {prompt_path}")
+                else:
+                    print(f"  Warning: Prompt file not found for '{prompt_key}': {prompt_path}")
+            
+            # Also archive the default prompts folder for backward compatibility
+            prompts_folder = "prompts"
+            if os.path.exists(prompts_folder):
                 for root, dirs, files in os.walk(prompts_folder):
                     for file in files:
                         file_path = os.path.join(root, file)
-                        # Store with relative path (e.g., prompts/debater/file.txt)
-                        arcname = os.path.relpath(file_path, '.')
-                        zipf.write(file_path, arcname)
-            print(f"✓ Created prompts archive: {prompts_zip}")
-        except Exception as e:
-            print(f"✗ Failed to create prompts archive: {e}")
-    else:
-        print(f"✗ Prompts folder not found: {prompts_folder}")
+                        abs_path = os.path.abspath(file_path)
+                        # Only add if not already archived (avoid duplicates)
+                        if abs_path not in archived_files:
+                            arcname = os.path.relpath(file_path, '.')
+                            zipf.write(file_path, arcname)
+                            archived_files.add(abs_path)
+        
+        print(f"✓ Created prompts archive: {prompts_zip}")
+        print(f"  Archived {len(archived_files)} prompt files")
+    except Exception as e:
+        print(f"✗ Failed to create prompts archive: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Debates are already saved directly in results_dir/debates/ - no need to move!
     print(f"✓ Debates saved in: {debates_folder}")
     
-    print(f"\n📁 Results saved in: {results_dir}")
+    print(f"\n Results saved in: {results_dir}")
     
     # Run analysis script automatically
     excel_file_path = os.path.join(results_dir, "all_debates_summary.xlsx")
@@ -357,7 +394,7 @@ def main():
         except Exception as e:
             print(f"✗ Failed to run analysis script: {e}")
     else:
-        print(f"⚠ Excel file not found at {excel_file_path}, skipping analysis")
+        print(f" Excel file not found at {excel_file_path}, skipping analysis")
     
     if failed_runs > 0:
         sys.exit(1)
