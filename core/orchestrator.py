@@ -262,9 +262,9 @@ class DebateOrchestrator:
         })
         raw_text = topic_result.strip().upper()
         
-        if 'ON-TOPIC' in raw_text:
+        if 'ON-TOPIC' or '<ON-TOPIC>' in raw_text:
             return True, "ON-TOPIC"
-        elif 'OFF-TOPIC' in raw_text:
+        elif 'OFF-TOPIC' or '<OFF-TOPIC>' in raw_text:
             return False, "OFF-TOPIC"
         else: #TODO: Decide if this should be a warning or an error
             logger.warning(f"Topic check response format unclear: {topic_result}. Defaulting to on-topic." , extra={"msg_type": "main debate", "sender": "moderator"})
