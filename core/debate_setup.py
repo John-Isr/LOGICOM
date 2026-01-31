@@ -1,5 +1,10 @@
 import logging
 from typing import Dict, Any, Optional, Tuple
+import pandas as pd
+import os 
+
+# Import our custom logger
+from utils.log_main import logger as debate_logger
 
 # --- Import necessary classes ---
 from core.interfaces import HELPER_TYPE_NONE, HELPER_TYPE_FALLACY, HELPER_TYPE_LOGICAL
@@ -7,12 +12,10 @@ from memory.chat_summary_memory import ChatSummaryMemory
 from agents.persuader_agent import PersuaderAgent
 from agents.debater_agent import DebaterAgent
 from agents.moderator_agent import ModeratorAgent
-
 from llm.llm_factory import LLMFactory
 _create_llm_client_func = LLMFactory.create_llm_client
-
-
-logger = logging.getLogger(__name__)
+# Use our custom debate_logger instead of creating a new one
+logger = debate_logger
 
 
 class DebateInstanceSetup:
@@ -22,7 +25,7 @@ class DebateInstanceSetup:
                  debate_settings: Dict[str, Any],
                  formatted_prompts: Dict[str, str]):
         
-        logger.info(f"Setting up debate instance")
+        logger.debug("Setting up new debate instance...")
         self.agents_configuration = agents_configuration
         self.debate_settings = debate_settings
         self.prompts = formatted_prompts
@@ -38,7 +41,7 @@ class DebateInstanceSetup:
         # Step 4: Create Agents
         self._create_agents() 
 
-        logger.info("Debate instance setup complete.")
+        logger.debug("Debate instance setup complete.")
         
     # --- Private Helper Methods --- 
     def _create_llm_clients(self):
@@ -81,11 +84,31 @@ class DebateInstanceSetup:
         mod_topic_instr = self.prompts['moderator_topic']
         if not mod_topic_instr: raise ValueError("Formatted prompt for 'moderator_topic' not found.")
         self.mod_topic_client = _create_llm_client_func(m_provider_config, mod_topic_instr)
+        
+        mod_conv_instr = self.prompts['moderator_conviction']
+        if not mod_conv_instr: raise ValueError("Formatted prompt for 'moderator_conviction' not found.")
+        self.mod_conv_client = _create_llm_client_func(m_provider_config, mod_conv_instr)
+
+        mod_arg_quality_instr = self.prompts.get('moderator_argument_quality')
+        if not mod_arg_quality_instr: 
+            raise ValueError(f"Formatted prompt for 'moderator_argument_quality' not found. Available prompts: {list(self.prompts.keys())}")
+        mod_arg_quality_config = self.agents_configuration['moderator_argument_quality']
+        if not mod_arg_quality_config: raise ValueError("Configuration for 'moderator_argument_quality' not found.")
+        mod_arg_quality_provider_config = mod_arg_quality_config['_resolved_llm_config']
+        if not mod_arg_quality_provider_config: raise ValueError("Resolved LLM config missing for moderator_argument_quality.")
+        self.mod_arg_quality_client = _create_llm_client_func(mod_arg_quality_provider_config, mod_arg_quality_instr)
+
+        mod_debate_quality_instr = self.prompts.get('moderator_debate_quality')
+        if not mod_debate_quality_instr: 
+            raise ValueError(f"Formatted prompt for 'moderator_debate_quality' not found. Available prompts: {list(self.prompts.keys())}")
+        self.mod_debate_quality_client = _create_llm_client_func(mod_arg_quality_provider_config, mod_debate_quality_instr)
 
         self.p_helper_llm_client = None
         # Create helper client only if use_helper is True and config was resolved
         if h_provider_config: 
-             logger.info(f"Attempting to create helper LLM client using config: {h_provider_config['model_name_or_path']}...")
+             # Get model identifier for logging (different models use different keys)
+             model_id = h_provider_config.get('model_name_or_path', h_provider_config.get('model_name', 'Unknown'))
+             logger.info(f"Attempting to create helper LLM client using config: {model_id}...")
              # Retrieve the correct system prompt for the determined helper type
              helper_system_instr, _ = self._determine_helper_prompts(helper_type)
              if use_helper and helper_system_instr is None:
@@ -106,15 +129,16 @@ class DebateInstanceSetup:
 
     def _determine_helper_prompts(self, helper_type: str) -> Tuple[Optional[str], Optional[str]]:
         """Determines the system and wrapper prompt keys based on helper_type."""
-        system_key = None
-        wrapper_key = None
-        if helper_type == HELPER_TYPE_FALLACY:
+        if helper_type == HELPER_TYPE_NONE:
+            # No helper prompts needed
+            return None, None
+        elif helper_type == HELPER_TYPE_FALLACY:
             system_key = "helper_fallacy_system"
             wrapper_key = "helper_fallacy_wrapper"
         elif helper_type == HELPER_TYPE_LOGICAL:
             system_key = "helper_logical_system"
             wrapper_key = "helper_logical_wrapper"
-        elif helper_type != HELPER_TYPE_NONE:
+        else:
             # Handle unknown helper types
             raise ValueError(f"Unknown helper_type '{helper_type}' specified. No helper prompts will be loaded.")
         
@@ -146,7 +170,7 @@ class DebateInstanceSetup:
             target_prompt_tokens=target,
             keep_messages_after_summary=keep
         )
-        logger.info("Created Persuader ChatSummaryMemory.")
+        logger.debug("Created Persuader ChatSummaryMemory.")
         
         self.debater_memory = ChatSummaryMemory(
             summarizer_llm=self.d_summarizer_client,
@@ -154,7 +178,7 @@ class DebateInstanceSetup:
             target_prompt_tokens=target,
             keep_messages_after_summary=keep
         )
-        logger.info("Created Debater ChatSummaryMemory.")
+        logger.debug("Created Debater ChatSummaryMemory.")
 
     def _create_agents(self):
         #TODO: further encapsulare this, it's a mess of mega long lines right now
@@ -168,9 +192,13 @@ class DebateInstanceSetup:
         d_provider_config = d_config['_resolved_llm_config']
         m_provider_config = m_config['_resolved_llm_config']
         h_provider_config = p_config['_resolved_llm_config_helper'] if use_helper else {}
+        mod_arg_quality_config = self.agents_configuration['moderator_argument_quality']
+        if not mod_arg_quality_config: raise ValueError("Configuration for 'moderator_argument_quality' not found.")
+        mod_arg_quality_provider_config = mod_arg_quality_config['_resolved_llm_config']
+        if not mod_arg_quality_provider_config: raise ValueError("Resolved LLM config missing for moderator_argument_quality.")
 
         # Combine default generation params from model config with agent-specific overrides
-        p_model_cfg = {**p_provider_config.get('default_config', {}), **p_config.get('model_config_override', {})}; d_model_cfg = {**d_provider_config.get('default_config', {}), **d_config.get('model_config_override', {})}; mod_model_cfg = {**m_provider_config.get('default_config', {}), **m_config.get('model_config_override', {})}; p_helper_model_cfg = {}
+        p_model_cfg = {**p_provider_config.get('default_config', {}), **p_config.get('model_config_override', {})}; d_model_cfg = {**d_provider_config.get('default_config', {}), **d_config.get('model_config_override', {})}; mod_model_cfg = {**m_provider_config.get('default_config', {}), **m_config.get('model_config_override', {})}; mod_arg_quality_model_cfg = {**mod_arg_quality_provider_config.get('default_config', {}), **mod_arg_quality_config.get('model_config_override', {})}; p_helper_model_cfg = {}
         if use_helper: p_helper_model_cfg = {**h_provider_config.get('default_config', {}), **p_config.get('helper_model_config_override', {})}
 
         # Retrieve required prompt content from self.prompts using direct access
@@ -194,4 +222,7 @@ class DebateInstanceSetup:
         self.debater = DebaterAgent(llm_client=self.d_llm_client, memory=self.debater_memory, model_config=d_model_cfg, prompt_wrapper=debater_wrapper)
         self.moderator_terminator = ModeratorAgent(llm_client=self.mod_term_client, agent_name="ModeratorTerminator", model_config=mod_model_cfg)
         self.moderator_topic_checker = ModeratorAgent(llm_client=self.mod_topic_client, agent_name="ModeratorTopicChecker", model_config=mod_model_cfg)
+        self.moderator_conviction = ModeratorAgent(llm_client=self.mod_conv_client, agent_name="ModeratorConviction", model_config=mod_model_cfg)
+        self.moderator_argument_quality = ModeratorAgent(llm_client=self.mod_arg_quality_client, agent_name="ModeratorArgumentQuality", model_config=mod_arg_quality_model_cfg)
+        self.moderator_debate_quality = ModeratorAgent(llm_client=self.mod_debate_quality_client, agent_name="ModeratorDebateQuality", model_config=mod_arg_quality_model_cfg)
         logger.info("Created all agents.") 

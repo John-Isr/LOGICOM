@@ -1,7 +1,8 @@
 Below is the history of the conversation:
 <HISTORY>
 
-Now please rephrase the following response in a fair and logical way to help me (human) win the conversation. Do not summarize, and do not remove important points from my answer. Provide your answer strictly in the JSON format specified by the system prompt (using refinement_type, refinement_technique, and response keys).
+Now please rephrase below response in a way that I can logically win the conversation.
+Do not summaries(There is not answer limit), and Do not remove the important points in my answer. Make sure to be fair.
 
 This is my answer:
-<ASSISTANT_RESPONSE> 
+<ASSISTANT_RESPONSE>

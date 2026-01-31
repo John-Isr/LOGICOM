@@ -1,8 +1,7 @@
-import logging
+from utils.log_main import logger
 from typing import Optional
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-import accelerate
 import gc
 # Direct import from project structure
 from core.interfaces import LLMInterface
@@ -10,8 +9,7 @@ from llm.openai_client import OpenAIClient
 from llm.gemini_client import GeminiClient
 from llm.local_client import OllamaClient, HuggingFaceClient
 
-
-logger = logging.getLogger(__name__)
+from utils.log_main import logger
 
 # Cache for loaded Hugging Face models and tokenizers
 # Key: tuple(model_name_or_path, quantization_bits) -> Value: tuple(model, tokenizer)
@@ -168,7 +166,7 @@ class LLMFactory:
                 }
                 hf_args = {k: v for k, v in hf_args.items() if v is not None}
 
-                logger.info(f"Instantiating HuggingFaceClient for model: {model_id}")
+                logger.debug(f"Instantiating HuggingFaceClient", extra={"msg_type": "system", "model": model_id}) 
                 return HuggingFaceClient(**hf_args)
 
             else:

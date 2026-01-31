@@ -1,0 +1,184 @@
+# Example Main Configuration
+
+debate_settings:
+  claims_file_path: ./claims/all-claim-not-claim.csv
+  column_mapping: 
+    TOPIC: "title"
+    CLAIM: "claim"
+    REASON: "reason"
+    TOPIC_ID: "id"
+  # Centralized prompt file paths
+  prompt_paths:
+    # Persuader prompts
+    persuader_system: ./prompts/persuader/persuader_system_instruction.txt
+    persuader_wrapper: ./prompts/persuader/persuader_prompt_wrapper.txt
+    persuader_initial: ./prompts/persuader/initial_prompt.txt 
+    # Debater prompts
+    debater_system: ./prompts/debater/debater_system_instruction.txt
+    debater_wrapper: ./prompts/debater/debater_prompt_wrapper.txt
+    # Moderator prompts
+    moderator_terminator: ./prompts/moderator/moderator_terminator_instruction.txt
+    moderator_topic: ./prompts/moderator/moderator_topic_instruction.txt
+    moderator_conviction: ./prompts/moderator/moderator_conviction_instruction.txt
+    moderator_argument_quality: ./prompts/moderator/moderator_argument_quality_instruction.txt
+    moderator_debate_quality: ./prompts/moderator/moderator_debate_quality_instruction.txt
+    # Helper prompts
+    helper_fallacy_system: ./prompts/helper/fallacy_system.txt
+    helper_fallacy_wrapper: ./prompts/helper/fallacy_wrapper.txt
+    helper_logical_system: ./prompts/helper/logical_system.txt
+    helper_logical_wrapper: ./prompts/helper/logical_wrapper.txt
+    # Memory summarizer prompt
+    memory_summarizer: ./prompts/memory/summary_instruction.txt 
+
+  # Debate Flow Control
+  max_rounds: 10 
+  # Delay between turns
+  turn_delay_seconds: 0.2
+  
+  # Memory Management
+  summarization_trigger_tokens: 4000 #Token threshold to trigger summarization
+  target_prompt_tokens: 2000 # Target token limit for the prompt AFTER summarization
+  keep_messages_after_summary: 4 # How many recent messages to keep alongside summary
+
+agent_configurations:
+  Default_No_Helper:
+    helper_type: "No_Helper" 
+
+    persuader:
+      # Reference to LLM config in models.yaml
+      model_name: gpt41_nano
+      model_config_override: {}
+
+    debater:
+      model_name: gpt35_turbo 
+      model_config_override: {}
+
+    moderator:
+      model_name: gpt41_mini
+      model_config_override: {}
+    
+    moderator_argument_quality:
+      model_name: o4_mini
+      model_config_override: {}
+
+  # --- Default with Fallacy Helper Enabled --- 
+  Default_Fallacy_Helper:
+    helper_type: "Fallacy_Helper"
+
+    persuader:
+      # Reference to LLM config in models.yaml
+      model_name: gpt41_nano
+      model_config_override: {}
+
+      # Helper Config 
+      helper_model_name: gpt41_nano
+      helper_model_config_override: {} 
+
+    debater:
+      model_name: gpt35_turbo 
+      model_config_override: {}
+
+    moderator:
+      model_name: gpt41_mini
+      model_config_override: {}
+    
+    moderator_argument_quality:
+      model_name: o4_mini
+      model_config_override: {}
+
+  # --- Default with Vanilla Helper Enabled --- 
+  
+  Default_Logical_Helper:
+    helper_type: "Logical_Helper"
+
+    persuader:
+      # Reference to LLM config in models.yaml
+      model_name: gpt41_nano
+      model_config_override: {}
+
+      # Helper Config 
+      helper_model_name: gpt41_nano 
+      helper_model_config_override: {} 
+
+    debater:
+      model_name: gpt35_turbo 
+      model_config_override: {}
+
+    moderator:
+      model_name: gpt41_mini
+      model_config_override: {}
+    
+    moderator_argument_quality:
+      model_name: o4_mini
+      model_config_override: {}
+
+  # --- Example Configuration using Local Gemma --- 
+  Local_Gemma_Test:
+    helper_type: No_Helper
+
+    persuader:
+      model_name: local_gemma_7b_4bit 
+      helper_model_name: local_gemma_7b_4bit
+      
+    debater:
+      model_name: local_gemma_7b_4bit 
+
+    moderator:
+      model_name: local_gemma_7b_4bit
+    
+    moderator_argument_quality:
+      model_name: local_gemma_7b_4bit
+
+  Local_Llama_Test:
+    helper_type: Fallacy_Helper
+
+    persuader:
+      model_name: local_llama31_8b_4bit 
+      helper_model_name: local_llama31_8b_4bit
+
+    debater:
+      model_name: local_llama31_8b_4bit 
+
+    moderator:
+      model_name: local_llama31_8b_4bit
+    
+    moderator_argument_quality:
+      model_name: local_llama31_8b_4bit
+
+  # --- Example Configuration using Local Mistral --- 
+  Local_Mistral_Test:
+    helper_type: No_Helper
+
+    persuader:
+      model_name: local_mistral_7b_instruct_4bit
+      helper_model_name: local_mistral_7b_instruct_4bit
+
+    debater:
+      model_name: local_mistral_7b_instruct_4bit
+
+    moderator:
+      model_name: local_mistral_7b_instruct_4bit
+    
+    moderator_argument_quality:
+      model_name: local_mistral_7b_instruct_4bit
+
+  # --- Example Configuration using Local DeepSeek Coder --- 
+  Local_DeepSeekCoder_Test:
+    helper_type: No_Helper 
+
+    persuader:
+      model_name: local_deepseek_coder_6_7b_4bit
+      helper_model_name: local_deepseek_coder_6_7b_4bit
+
+    debater:
+      model_name: local_deepseek_coder_6_7b_4bit
+
+    moderator:
+      model_name: local_deepseek_coder_6_7b_4bit
+    
+    moderator_argument_quality:
+      model_name: local_deepseek_coder_6_7b_4bit
+
+# End of agent_configurations
+
+# --- (Potentially other top-level settings below) ---

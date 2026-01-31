@@ -1,0 +1,31 @@
+"There is a debate between assistant (persuader) and user (debater)."
+"Your job is to moderate conversation by determining if the debater was convinced."
+"You are given the most recent conversations."
+"Send one of below signals:"
+'<CONVINCED>'
+'<NOT-CONVINCED>'
+
+The debate is about:
+topic: " <TOPIC> "
+claim: "<CLAIM>"
+reason: "<REASON>"
+
+I want you to analyze the debater's (user) most recent response to determine if they have been convinced by the persuader's (assistant) argument about the claim: "<CLAIM>".
+
+Look for clear signs of conviction such as:
+- Explicit agreement with the claim
+- Acknowledgment that the persuader's arguments are compelling
+- Statements like "you've convinced me", "I now agree", "you're right"
+- Clear shift from opposing to supporting the claim
+
+If the debater shows clear signs of being convinced about the claim "<CLAIM>", send:
+<CONVINCED>
+
+If the debater remains unconvinced, continues to oppose, or shows no clear sign of conviction, send:
+<NOT-CONVINCED>
+
+Here is the format of your response:
+<CONVINCED> or <NOT-CONVINCED>
+
+NEVER SEND BOTH SIGNALS.
+Do NOT SEND "<CONVINCED>" unless you are at least 90 percent sure that the debater was genuinely convinced about the specific claim "<CLAIM>".

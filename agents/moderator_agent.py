@@ -3,6 +3,7 @@ from typing import Any, Optional, Dict, List
 # Direct imports from project structure
 from agents.base_agent import BaseAgent
 from core.interfaces import LLMInterface, MemoryInterface
+from utils.log_main import logger
 
 class ModeratorAgent(BaseAgent):
     """Agent responsible for performing a *single* specific moderation check."""
@@ -45,6 +46,7 @@ class ModeratorAgent(BaseAgent):
         prompt = [{"role": "user", "content": user_content}]
 
         response_content = self._generate_response(prompt)
+        logger.debug(f"Moderator generated response: {response_content}")
 
         # Return the raw response content string, and the prompt sent
         return response_content

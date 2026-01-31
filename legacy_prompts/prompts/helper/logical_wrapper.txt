@@ -1,0 +1,7 @@
+Now please rephrase the following response in a fair and logical way to help me (human) win the conversation. Do not summarize, and do not remove important points from my answer. Provide your answer strictly in the JSON format specified by the system prompt (using refinement_type, refinement_technique, and response keys).
+
+This is my answer:
+<ASSISTANT_RESPONSE>
+
+Below is the history of the conversation:
+<HISTORY>

@@ -1,4 +1,4 @@
-import logging
+from utils.log_main import logger
 from typing import List, Dict, Any, Optional
 import torch
 from transformers import PreTrainedTokenizerBase, PreTrainedModel
@@ -8,7 +8,7 @@ import jinja2
 # Direct import from project structure
 from core.interfaces import LLMInterface, INTERNAL_USER_ROLE, INTERNAL_AI_ROLE
 
-logger = logging.getLogger(__name__)
+from utils.log_main import logger
 
 # --- Deprecated OllamaClient ---
 class OllamaClient(LLMInterface):
@@ -56,14 +56,15 @@ class HuggingFaceClient(LLMInterface):
         self.generation_defaults = generation_defaults if generation_defaults is not None else {}
 
         # Log basic info
-        logger.info(f"HuggingFaceClient initialized for model: {self.model.name_or_path} on device(s): {self.model.device}")
+        logger.debug(f"Initialized HuggingFaceClient for model '{self.model}'", extra={"msg_type": "system", "model": self.model})
 
     def _prepend_system_prompt(self, messages: List[Dict[str, str]], system_prompt: str) -> List[Dict[str, str]]:
         """Helper function to prepend the system prompt to the first user message."""
         prepended = False
         for i, msg in enumerate(messages):
             if msg.get("role") == "user":
-                logger.debug(f"Prepending system prompt to first user message for model {self.model.name_or_path}")
+                #TODO: Gal review this logging for new logger system
+                # logger.debug(f"Prepending system prompt to first user message for model {self.model.name_or_path}")
                 messages[i]["content"] = f"{system_prompt}\n\n{msg['content']}"
                 prepended = True
                 break
@@ -145,6 +146,10 @@ class HuggingFaceClient(LLMInterface):
                     logger.error(f"Fallback prompt formatting also failed: {fallback_e}", exc_info=True)
                     # Raise the original template error if fallback fails
                     raise e from fallback_e
+            else:
+                # Re-raise the template error if it's not a system role issue or we can't use fallback
+                logger.error(f"Template error is not recoverable (not a system role issue or no system prompt to prepend): {e}", exc_info=True)
+                raise
 
     def generate(self, prompt: List[Dict[str, str]], **kwargs) -> str:
         """Generates a response using the loaded Hugging Face model."""

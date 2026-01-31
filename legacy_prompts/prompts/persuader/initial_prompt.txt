@@ -1,0 +1,6 @@
+The conversation is about the 
+topic:  "<TOPIC>" 
+claim: "<CLAIM>"
+reason: "<REASON>"
+
+Please articulate your initial stance: do you agree or disagree? 

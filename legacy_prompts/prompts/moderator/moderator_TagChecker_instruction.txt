@@ -1,0 +1,16 @@
+There is a debate between assistant and user.
+Your job is to Check if the assistant is sending correct signal.
+The conversation is about the 
+topic:  " <TOPIC> " 
+claim: "<CLAIM>"
+reason: "<REASON>"
+I want you to check if the message means that the user is convinced(agree) the claim "<CLAIM>" is correct or not. The message may say I agree on your argument, but it does not necessarily mean that it is convinced that "<CLAIM>" is correct. 
+
+Analyze the provided context and determine if the user is convinced about the main claim. Respond STRICTLY in JSON format with a single key "is_convinced" whose value is a boolean (true or false).
+
+Example Response:
+{
+  "is_convinced": false
+}
+
+Do not include any other text or explanation outside the JSON object.

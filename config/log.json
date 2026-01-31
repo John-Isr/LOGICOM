@@ -1,0 +1,76 @@
+{
+    "version": 1,
+    "disable_existing_loggers": false,
+    "formatters": {
+        "standard": {
+            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        },
+        "json": {
+            "()": "utils.log_main.MyJSONFormatter",
+            "fmt_keys": {
+                "timestamp": "timestamp",
+                "level": "levelname",
+                "message": "message",
+                "logger": "name",
+                "module": "module",
+                "function": "funcName",
+                "line": "lineno",
+                "thread_name": "threadName"
+            }
+        },
+        "console": {
+            "format": "%(asctime)s [%(levelname)s] %(message)s"
+        }
+    },
+    "filters": {
+        "main_debate_filter": {
+            "()": "utils.log_main.MainDebateFilter"
+        },
+        "persuador_helper_filter": {
+            "()": "utils.log_main.PersuadorHelperFilter"
+        },
+        "system_message_filter": {
+            "()": "utils.log_main.SystemMessageFilter"
+        }
+    },
+    "handlers": {
+        "main_handler": {
+            "class": "logging.FileHandler",
+            "filename": "debates/debate_main.log",
+            "formatter": "json",
+            "filters": ["main_debate_filter"],
+            "level": "INFO"
+        },
+        "debug_handler": {
+            "class": "logging.FileHandler",
+            "filename": "debates/debate_debug.log",
+            "formatter": "json",
+            "level": "INFO"
+        },
+        "persuador_helper_handler": {
+            "class": "logging.FileHandler",
+            "filename": "debates/persuador_helper_communication.log",
+            "formatter": "json",
+            "filters": ["persuador_helper_filter"],
+            "level": "INFO"
+        },
+
+        "console_handler": {
+            "class": "logging.StreamHandler",
+            "formatter": "console",
+            "filters": ["system_message_filter"],
+            "level": "INFO"
+        }
+    },
+    "loggers": {
+        "debate_logger": {
+            "handlers": ["main_handler", "persuador_helper_handler", "console_handler"],
+            "level": "DEBUG",
+            "propagate": false
+        }
+    },
+    "root": {
+        "handlers": [],
+        "level": "INFO"
+    }
+}

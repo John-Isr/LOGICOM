@@ -13,3 +13,4 @@ torch
 transformers
 accelerate
 bitsandbytes
+filelock

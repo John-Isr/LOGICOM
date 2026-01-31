@@ -5,8 +5,8 @@ import logging
 # Direct import from project structure
 from core.interfaces import AgentInterface, LLMInterface, MemoryInterface
 from utils.token_utils import calculate_chat_tokens, calculate_string_tokens, get_tokenizer
+from utils.log_main import logger  # Import the custom debate logger
 
-logger = logging.getLogger(__name__)
 
 class BaseAgent(AgentInterface):
     """Base class for all agents, handling common initialization and interaction flow."""
@@ -36,10 +36,11 @@ class BaseAgent(AgentInterface):
         self.prompt_tokens_used: int = 0
         self.completion_tokens_used: int = 0
 
+        # Log if prompt wrapper template was provided
         if self._prompt_wrapper_template:
-            logger.info(f"Prompt wrapper template provided for {self.agent_name}.")
+            logger.debug(f"Prompt wrapper template provided for {self.agent_name}")
         else:
-            logger.info(f"No prompt wrapper template provided for {self.agent_name}.")
+            logger.debug(f"No prompt wrapper template for {self.agent_name}")
 
     @abstractmethod
     def call(self, input_data: Any) -> Any:
@@ -59,7 +60,7 @@ class BaseAgent(AgentInterface):
         self.token_used = 0
         self.prompt_tokens_used = 0
         self.completion_tokens_used = 0
-        logger.info(f"{self.agent_name} memory/state reset.")
+        logger.debug(f"{self.agent_name} memory/state reset.")
 
     def get_memory_tokens(self) -> Dict[str, int]:
         """
@@ -152,7 +153,7 @@ class BaseAgent(AgentInterface):
 
         # Replace the last message in the history
         final_prompt_to_send = prompt[:-1] + [final_user_message]
-        logger.debug(f"Applied prompt wrapper. Final user message: {wrapped_content[:100]}...")
+        logger.debug(f"Applied prompt wrapper. Final user message: {wrapped_content[:100]}...") #TODO:: check if seen in log that is sent from base agent
         return final_prompt_to_send
 
 
@@ -162,4 +163,14 @@ class BaseAgent(AgentInterface):
         if self.memory:
             return self.memory.get_last_ai_message()
         else:
-            raise AttributeError(f"Cannot get last response from agent '{self.agent_name}': Memory is not configured.") 
+            raise AttributeError(f"Cannot get last response from agent '{self.agent_name}': Memory is not configured.")
+
+    def update_argument_quality_rate(self, rate: Optional[int]) -> None:
+        """Updates the argument quality rate for the most recent AI message."""
+        if self.memory:
+            self.memory.update_last_argument_quality_rate(rate)
+
+    def update_conviction_rate(self, rate: Optional[int]) -> None:
+        """Updates the conviction rate for the most recent AI message."""
+        if self.memory:
+            self.memory.update_last_conviction_rate(rate) 

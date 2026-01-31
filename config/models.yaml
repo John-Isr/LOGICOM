@@ -6,94 +6,123 @@ llm_models:
   gpt35_turbo:
     provider: openai
     model_name: gpt-3.5-turbo
-    # api_key: YOUR_KEY_HERE # Option 1: Uncomment and add key here (less secure). Option 2 (Recommended): Leave commented and set env var OPENAI_API_KEY instead.
     default_config:
-      temperature: 0.7
+      temperature: 1
 
   gpt35_turbo_0125:
     provider: openai
     model_name: gpt-3.5-turbo-0125
-    # api_key:
     default_config:
-      temperature: 0.7 
+      temperature: 1 
 
   gpt4:
     provider: openai
     model_name: gpt-4
-    # api_key:
     default_config:
-      temperature: 0.7
+      temperature: 1
 
   gpt4_turbo:
     provider: openai
     model_name: gpt-4-turbo
-    # api_key:
     default_config:
-      temperature: 0.7
+      temperature: 1
 
   gpt4_0613:
     provider: openai
     model_name: gpt-4-0613
-    # api_key:
     default_config:
-      temperature: 0.7
+      temperature: 1
 
   gpt4o:
     provider: openai
     model_name: gpt-4o
-    # api_key:
     default_config:
-      temperature: 0.7
+      temperature: 1
 
   gpt4o_mini:
     provider: openai
     model_name: gpt-4o-mini
-    # api_key:
     default_config:
-      temperature: 0.7
+      temperature: 1
+
+  o4_mini:
+    provider: openai
+    model_name: o4-mini
+    default_config:
+      temperature: 1
+
+  gpt41:
+    provider: openai
+    model_name: gpt-4.1
+    default_config:
+      temperature: 1
+
+  gpt41_nano:
+    provider: openai
+    model_name: gpt-4.1-nano
+    default_config:
+      temperature: 1
+
+  gpt41_mini:
+    provider: openai
+    model_name: gpt-4.1-mini
+    default_config:
+      temperature: 1
+
+  gpt5:
+    provider: openai
+    model_name: gpt-5
+    default_config:
+      temperature: 1
+
+  gpt5_mini:
+    provider: openai
+    model_name: gpt-5-mini
+    default_config:
+      temperature: 1
+
+  gpt51:
+    provider: openai
+    model_name: gpt-5.1
+    default_config:
+      temperature: 1
 
   # === Google Gemini Models ===
   gemini_15_flash_8b:
     provider: gemini
     model_name: gemini-1.5-flash-8b
-    # api_key:
     default_config:
-      temperature: 0.7
+      temperature: 0.5
 
   gemini_15_flash:
     provider: gemini
     model_name: gemini-1.5-flash
-    # api_key:
     default_config:
-      temperature: 0.7
+      temperature: 0.5
 
   gemini_15_pro:
     provider: gemini
     model_name: gemini-1.5-pro
-    # api_key:
     default_config:
-      temperature: 0.7
+      temperature: 0.5
 
   gemini_20_flash: 
     provider: gemini
     model_name: gemini-2.0-flash
-    # api_key:
     default_config:
-      temperature: 0.7
+      temperature: 0.5
 
   gemini_20_flash_lite: 
     provider: gemini
     model_name: gemini-2.0-flash-lite
-    # api_key:
     default_config:
-      temperature: 0.7
+      temperature: 0.5
 
   gemini_20_pro: 
     provider: gemini
     model_name: gemini-2.0-pro
-    # api_key:
     default_config:
-      temperature: 0.7
+      temperature: 0.5
 
   # === Local LLM Templates ===
   # --- Local Hugging Face Configs --- 

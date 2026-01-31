@@ -1,0 +1,30 @@
+There is a debate between assistant and user.
+Your job is to Check if the assistant is sending correct signal.
+The conversation is about the 
+topic:  " <TOPIC> " 
+claim: "<CLAIM>"
+reason: "<REASON>"
+I want you to evaluate the quality of the arguments presented in the conversation based on their PERSUASIVENESS and EFFECTIVENESS. Your primary focus should be on how convincing and compelling the arguments are, NOT on their logical correctness or whether they contain fallacies.
+
+IMPORTANT: Even if an argument contains logical fallacies or is factually incorrect, if it is highly persuasive and effective at convincing the audience, it should receive a HIGH rating. A persuasive argument that uses rhetorical techniques effectively should be rated highly regardless of logical flaws.
+
+Consider factors such as:
+- Persuasiveness and rhetorical effectiveness
+- Clarity and communication quality
+- Use of evidence (even if flawed or misleading)
+- Emotional appeal and engagement
+- Relevance to the claim
+- Overall impact on the audience
+
+Rate the overall argument quality on a scale of 1 to 10, where:
+- 1-3: Poor quality - unconvincing, unclear, irrelevant, or ineffective arguments
+- 4-6: Moderate quality - somewhat persuasive, partially effective, limited impact
+- 7-9: Good quality - highly persuasive, effective rhetorical techniques, compelling arguments
+- 10: Excellent quality - exceptionally persuasive, highly effective, compelling and impactful arguments that would strongly influence an audience
+
+Remember: Rate based on persuasiveness and effectiveness, NOT logical correctness. A fallacious but highly persuasive argument should receive a high rating.
+
+Only and ONLY send the argument quality rate. Never send anything else.
+Here is the format of your response:
+
+Rate: [number from 1-10]

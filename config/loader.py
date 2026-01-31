@@ -2,8 +2,7 @@ import yaml
 import os
 from typing import Dict, Any, Tuple
 import logging
-
-logger = logging.getLogger(__name__)
+from utils.log_main import logger
 
 # Define default paths relative to the loader file's location
 CONFIG_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,17 +15,17 @@ def load_yaml_config(file_path: str) -> Dict[str, Any]:
         with open(file_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
             if config is None:
-                logger.warning(f"Config file {file_path} is empty.")
+                logger.warning(f"Config file {file_path} is empty.", extra={"msg_type": "system"})
                 return {}
             return config
     except FileNotFoundError:
-        logger.error(f"Configuration file not found at {file_path}")
+        logger.error(f"Configuration file not found at {file_path}", extra={"msg_type": "system"})
         raise
     except yaml.YAMLError as e:
-        logger.error(f"Error parsing YAML file {file_path}: {e}")
+        logger.error(f"Error parsing YAML file {file_path}: {e}", extra={"msg_type": "system"})
         raise
     except Exception as e:
-        logger.error(f"An unexpected error occurred loading config {file_path}: {e}", exc_info=True)
+        logger.error(f"An unexpected error occurred loading config {file_path}: {e}", extra={"msg_type": "system"})
         raise
 
 def _load_prompt(file_path: str) -> str:
@@ -81,7 +80,7 @@ def _resolve_models_for_config(target_agent_config: Dict[str, Any],
 
 def load_app_config(settings_path: str = DEFAULT_SETTINGS_PATH, 
                       models_path: str = DEFAULT_MODELS_PATH,
-                      run_config_name: str = "Default_NoHelper") -> Tuple[Dict, Dict, Dict]:
+                      run_config_name: str = "Default_No_Helper") -> Tuple[Dict, Dict, Dict]:
     """
     Loads debate settings, all prompt templates, and the specific agent
     configuration for the run, resolving LLM model details.
@@ -94,9 +93,9 @@ def load_app_config(settings_path: str = DEFAULT_SETTINGS_PATH,
     Returns:
         A tuple containing: (debate_settings_dict, resolved_agent_config_dict, prompt_templates_dict).
     """
-    logger.info(f"Loading settings from: {settings_path}")
-    logger.info(f"Loading models from: {models_path}")
-    logger.info(f"Target run configuration: '{run_config_name}'")
+    logger.debug(f"Loading settings from: {settings_path}", extra={"msg_type": "system"})
+    logger.debug(f"Loading models from: {models_path}", extra={"msg_type": "system"})
+    logger.debug(f"Target run configuration: '{run_config_name}'", extra={"msg_type": "system"})
     
     settings_config = load_yaml_config(settings_path)
     models_config = load_yaml_config(models_path)
@@ -127,6 +126,6 @@ def load_app_config(settings_path: str = DEFAULT_SETTINGS_PATH,
     _resolve_models_for_config(target_agent_config, resolved_llm_providers)
 
     # 6. Return the results as a tuple
-    logger.info("Configuration loading and resolution complete.")
+    logger.debug("Loaded agent configurations", extra={"msg_type": "system"})
     return debate_settings, target_agent_config, prompt_templates
 

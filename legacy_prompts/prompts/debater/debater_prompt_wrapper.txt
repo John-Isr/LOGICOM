@@ -1,0 +1,4 @@
+The opponent's last message:
+<LAST_OPPONENT_MESSAGE>
+
+Based on the conversation history and the opponent's last statement, please formulate your current opinion or response. Generate your response now.

@@ -19,6 +19,9 @@ debate_settings:
     # Moderator prompts
     moderator_terminator: ./prompts/moderator/moderator_terminator_instruction.txt
     moderator_topic: ./prompts/moderator/moderator_topic_instruction.txt
+    moderator_conviction: ./prompts/moderator/moderator_conviction_instruction.txt
+    moderator_argument_quality: ./prompts/moderator/moderator_argument_quality_instruction.txt
+    moderator_debate_quality: ./prompts/moderator/moderator_debate_quality_instruction.txt
     # Helper prompts
     helper_fallacy_system: ./prompts/helper/fallacy_system.txt
     helper_fallacy_wrapper: ./prompts/helper/fallacy_wrapper.txt
@@ -27,94 +30,87 @@ debate_settings:
     # Memory summarizer prompt
     memory_summarizer: ./prompts/memory/summary_instruction.txt 
 
-  # Output Settings
-  log_base_path: ./logs # Where to save debate logs 
-  log_formats: [json, html, txt, xlsx]
-  save_clean_logs: true # Whether to save clean logs (no metadata)
-  # TODO: Add fallacy analysis output path option
-  fallacy_csv_path: ./logs/fallacies.csv 
-  
   # Debate Flow Control
-  max_rounds: 12 
+  max_rounds: 10 
   # Delay between turns
-  turn_delay_seconds: 1
+  turn_delay_seconds: 0.1
   
   # Memory Management
-  summarization_trigger_tokens: 6000 # Token threshold to trigger summarization
-  target_prompt_tokens: 4000 # Target token limit for the prompt AFTER summarization
+  summarization_trigger_tokens: 4000 #Token threshold to trigger summarization
+  target_prompt_tokens: 2000 # Target token limit for the prompt AFTER summarization
   keep_messages_after_summary: 4 # How many recent messages to keep alongside summary
 
 agent_configurations:
-  Default_NoHelper:
-    helper_type: No_Helper
+  Default_No_Helper:
+    helper_type: "No_Helper" 
 
     persuader:
       # Reference to LLM config in models.yaml
       model_name: gpt35_turbo
-      model_config_override:
-        # temperature: 1.0 
-        # presence_penalty: 0.0
-        # frequency_penalty: 0.0
-
-      # Helper Feedback Config 
-      use_helper_feedback: false 
-      helper_model_name: gpt35_turbo
-      helper_model_config_override: {}
+      model_config_override: {}
 
     debater:
       model_name: gpt35_turbo 
-      model_config_override:
-        # temperature: 1.0 
-        # presence_penalty: 0.0
-        # frequency_penalty: 0.0
+      model_config_override: {}
 
     moderator:
-      model_name: gemini_15_flash_8b 
+      model_name: gpt35_turbo
+      model_config_override: {}
+    
+    moderator_argument_quality:
+      model_name: gpt35_turbo
+      model_config_override: {}
 
   # --- Default with Fallacy Helper Enabled --- 
-  Default_FallacyHelper:
-    helper_type: Fallacy_Helper
+  Default_Fallacy_Helper:
+    helper_type: "Fallacy_Helper"
 
     persuader:
       # Reference to LLM config in models.yaml
       model_name: gpt35_turbo
-      model_config_override:
-        temperature: 1.0 
+      model_config_override: {}
 
-      # Helper Feedback Config 
+      # Helper Config 
       helper_model_name: gpt35_turbo
       helper_model_config_override: {} 
 
     debater:
       model_name: gpt35_turbo 
-      model_config_override:
-        temperature: 1.0 
+      model_config_override: {}
 
     moderator:
-      model_name: gemini_15_flash_8b
+      model_name: gpt35_turbo
+      model_config_override: {}
+    
+    moderator_argument_quality:
+      model_name: gpt35_turbo
+      model_config_override: {}
 
   # --- Default with Vanilla Helper Enabled --- 
   
-  Default_LogicalHelper:
-    helper_type: Logical_Helper
+  Default_Logical_Helper:
+    helper_type: "Logical_Helper"
 
     persuader:
       # Reference to LLM config in models.yaml
       model_name: gpt35_turbo
-      model_config_override:
-        temperature: 1.0 
+      model_config_override: {}
 
-      # Helper Feedback Config 
+      # Helper Config 
       helper_model_name: gpt35_turbo 
       helper_model_config_override: {} 
 
     debater:
       model_name: gpt35_turbo 
-      model_config_override:
-        temperature: 1.0 
+      model_config_override: {}
 
     moderator:
-      model_name: gemini_15_flash_8b 
+      model_name: gpt35_turbo
+      model_config_override: {}
+    
+    moderator_argument_quality:
+      model_name: gpt35_turbo
+      model_config_override: {}
 
   # --- Example Configuration using Local Gemma --- 
   Local_Gemma_Test:
@@ -128,7 +124,10 @@ agent_configurations:
       model_name: local_gemma_7b_4bit 
 
     moderator:
-      model_name: local_gemma_7b_4bit 
+      model_name: local_gemma_7b_4bit
+    
+    moderator_argument_quality:
+      model_name: local_gemma_7b_4bit
 
   Local_Llama_Test:
     helper_type: Fallacy_Helper
@@ -141,7 +140,10 @@ agent_configurations:
       model_name: local_llama31_8b_4bit 
 
     moderator:
-      model_name: local_llama31_8b_4bit 
+      model_name: local_llama31_8b_4bit
+    
+    moderator_argument_quality:
+      model_name: local_llama31_8b_4bit
 
   # --- Example Configuration using Local Mistral --- 
   Local_Mistral_Test:
@@ -156,6 +158,9 @@ agent_configurations:
 
     moderator:
       model_name: local_mistral_7b_instruct_4bit
+    
+    moderator_argument_quality:
+      model_name: local_mistral_7b_instruct_4bit
 
   # --- Example Configuration using Local DeepSeek Coder --- 
   Local_DeepSeekCoder_Test:
@@ -169,6 +174,9 @@ agent_configurations:
       model_name: local_deepseek_coder_6_7b_4bit
 
     moderator:
+      model_name: local_deepseek_coder_6_7b_4bit
+    
+    moderator_argument_quality:
       model_name: local_deepseek_coder_6_7b_4bit
 
 # End of agent_configurations

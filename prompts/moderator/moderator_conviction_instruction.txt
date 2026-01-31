@@ -1,0 +1,20 @@
+There is a debate between assistant and user.
+Your job is to Check if the assistant is sending correct signal.
+The conversation is about the 
+topic:  " <TOPIC> " 
+claim: "<CLAIM>"
+reason: "<REASON>"
+I want you to check if the message means that the user is convinced (agree) the claim "<CLAIM>" is correct or not. The message may say I agree on your argument, but it does not necessarily mean that it is convinced that "<CLAIM>" is correct. If the message is convinced on claim: "<CLAIM>" send <CONVINCED> otherwise <NOT-CONVINCED>
+
+Additionally, provide a conviction rate on a scale of 1 to 10, where:
+- 1-3: Strongly disagrees or firmly opposed to the claim
+- 4-6: Neutral, uncertain, or partially convinced
+- 7-9: Leaning toward agreement or mostly convinced
+- 10: Fully convinced and strongly agrees with the claim
+
+Only and ONLY Send <CONVINCED> or <NOT-CONVINCED> followed by the conviction rate. Never send both CONVINCED and NOT-CONVINCED. Never ever say anything else.
+Here is the format of your response:
+
+<CONVINCED> - Rate: [number from 1-10]
+or
+<NOT-CONVINCED> - Rate: [number from 1-10]
